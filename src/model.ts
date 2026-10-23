@@ -70,10 +70,10 @@ export const UNASSIGNED_ID = "";
 /**
  * 1段の字下げ
  *
- * 見出し行の三角の幅（16px）と間隔（6px）の和 子の先頭のアイコンが親の
- * フォルダのアイコンの真下へ来る
+ * 親には三角とアイコン 子Projectにはアイコンだけがあるため
+ * 22pxではアイコン位置が揃ってしまう さらに14px右へ寄せて親子を区別する
  */
-export const INDENT_PX = 22;
+export const INDENT_PX = 36;
 
 /**
  * 値が plain なオブジェクトか

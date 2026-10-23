@@ -35,7 +35,9 @@ import {
 	type DragEvent,
 	type ReactNode,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
+	useRef,
 	useState,
 	useSyncExternalStore,
 } from "react";
@@ -72,6 +74,7 @@ import {
 	toggleCollapsed,
 	UNASSIGNED_ID,
 } from "./model";
+import { createRowMotion } from "./motion";
 
 /**
  * 常駐させる枠
@@ -133,8 +136,9 @@ const ICON_PRESETS = [
  */
 const STYLE = `
 .dwf-row{box-sizing:border-box;flex:none;height:34px;margin-top:4px;border-radius:var(--dsw-radius-md);padding:0 8px;padding-inline-start:calc(8px + var(--dwf-indent,0px));cursor:pointer;user-select:none;color:var(--dsw-alias-label-secondary);display:flex;align-items:center;gap:6px}
-.dwf-row:first-child{margin-top:0}
-.dwf-row:hover,.dwf-row.dwf-menuOpen{background:var(--dsw-alias-interactive-bg-hover)}
+.dwf-row.dwf-top{margin-top:4px}
+.dwf-row.dwf-first{margin-top:0}
+.dwf-row:hover,.dwf-row.dwf-menuOpen{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
 .dwf-row{position:relative}
 .dwf-row.dwf-drop-inside{background:var(--dsw-alias-interactive-bg-hover);box-shadow:inset 0 0 0 1px var(--dsw-alias-state-business-primary)}
 .dwf-row.dwf-drop-before:before,.dwf-row.dwf-drop-after:after{content:"";position:absolute;left:calc(8px + var(--dwf-indent,0px));right:4px;height:2px;border-radius:1px;background:var(--dsw-alias-state-business-primary);pointer-events:none}
@@ -154,6 +158,8 @@ const STYLE = `
 .dwf-headerButton{border-radius:var(--dsw-radius-sm);cursor:pointer;width:28px;height:28px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}
 .dwf-headerButton:hover{background:var(--dsw-alias-interactive-bg-hover)}
 :has(input[tabindex="0"]) > .dwf-headerButton{display:none}
+[role="tree"]:has(> .dwf-row[class*="dwf-drop-"]) > :not(.dwf-row)::before,[role="tree"]:has(> .dwf-row[class*="dwf-drop-"]) > :not(.dwf-row)::after{display:none !important}
+:has(> [role="tree"] > .dwf-row[class*="dwf-drop-"]) > span[aria-hidden="true"]{display:none !important}
 .dwf-iconGrid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:12px}
 .dwf-iconChoice{height:32px;border-radius:var(--dsw-radius-sm);border:none;background:0 0;cursor:pointer;font-size:18px;line-height:1}
 .dwf-iconChoice:hover,.dwf-iconChoice[aria-pressed=true]{background:var(--dsw-alias-interactive-bg-hover)}
@@ -468,6 +474,32 @@ function guideStyle(depth: number): CSSProperties {
 }
 
 /**
+ * イベントの起きた場所を含む 純正のワークスペース群の id
+ *
+ * @param tree - 純正の一覧の木
+ * @param target - イベントの対象
+ * @returns 群の id 見出し行や木の外なら undefined
+ */
+function sectionAt(
+	tree: HTMLElement,
+	target: EventTarget | null,
+): string | undefined {
+	let node = target instanceof Element ? target : null;
+	while (node !== null && node.parentElement !== tree) {
+		node = node.parentElement;
+	}
+	if (node === null || node.classList.contains("dwf-row")) {
+		return undefined;
+	}
+	const key = node
+		.querySelector(`[data-row-key^=${quote(ROW_KEY_PREFIX)}]`)
+		?.getAttribute("data-row-key");
+	return key?.startsWith(ROW_KEY_PREFIX) === true
+		? key.slice(ROW_KEY_PREFIX.length)
+		: undefined;
+}
+
+/**
  * ドラッグ中の指が行のどこにあるか
  *
  * フォルダを運んでいるときは 上下の4分の1を前後 真ん中を中とする
@@ -503,6 +535,8 @@ function HeadingRowView({
 	onToggle,
 	onDropWorkspace,
 	onDropFolder,
+	highlighted,
+	first,
 	t,
 }: {
 	row: HeadingRow;
@@ -512,6 +546,8 @@ function HeadingRowView({
 	onToggle: () => void;
 	onDropWorkspace: (workspaceId: string) => void;
 	onDropFolder: (folderId: string, position: DropPosition) => void;
+	highlighted: boolean;
+	first: boolean;
 	t: Messages;
 }) {
 	const [menuOpen, setMenuOpen] = useState(false);
@@ -525,6 +561,9 @@ function HeadingRowView({
 				"dwf-row",
 				menuOpen ? "dwf-menuOpen" : "",
 				drop === null ? "" : `dwf-drop-${drop}`,
+				highlighted ? "dwf-drop-inside" : "",
+				first ? "dwf-first" : "",
+				!first && row.depth === 0 ? "dwf-top" : "",
 			]
 				.filter(Boolean)
 				.join(" ")}
@@ -1031,7 +1070,113 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 	);
 	const css = useMemo(() => layoutCss(layout), [layout]);
 
-	useEffect(() => installStyle(LAYOUT_TAG_ID, css), [css]);
+	const motion = useMemo(createRowMotion, []);
+	const ownChange = useRef(false);
+	const update = (change: (current: FolderState) => FolderState) => {
+		ownChange.current = true;
+		store.update(change);
+	};
+
+	useLayoutEffect(() => {
+		motion.attach(tree);
+		return () => motion.attach(null);
+	}, [motion, tree]);
+
+	useLayoutEffect(() => {
+		const style = installStyle(LAYOUT_TAG_ID, css);
+		motion.sync(ownChange.current);
+		ownChange.current = false;
+		return style;
+	}, [css, motion]);
+
+	const folderOfSection = (workspaceId: string): string =>
+		layout.sections.has(workspaceId)
+			? (state.assignments[workspaceId] ?? UNASSIGNED_ID)
+			: UNASSIGNED_ID;
+	const [sectionTarget, setSectionTarget] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (tree === null || !layout.active) {
+			return;
+		}
+		const carrying = (event: globalThis.DragEvent) =>
+			event.dataTransfer?.types.includes(FOLDER_DRAG_TYPE) === true;
+		const onOver = (event: globalThis.DragEvent) => {
+			const section = sectionAt(tree, event.target);
+			if (section === undefined || section === "") {
+				setSectionTarget(null);
+				return;
+			}
+			const folderId = folderOfSection(section);
+			if (carrying(event)) {
+				if (folderId === UNASSIGNED_ID) {
+					setSectionTarget(null);
+					return;
+				}
+				event.preventDefault();
+				event.stopPropagation();
+				setSectionTarget(folderId);
+				return;
+			}
+			setSectionTarget(null);
+		};
+		const onDrop = (event: globalThis.DragEvent) => {
+			const section = sectionAt(tree, event.target);
+			setSectionTarget(null);
+			if (section === undefined || section === "") {
+				return;
+			}
+			const folderId = folderOfSection(section);
+			const movingFolder = event.dataTransfer?.getData(FOLDER_DRAG_TYPE) ?? "";
+			if (movingFolder !== "") {
+				if (folderId !== UNASSIGNED_ID) {
+					event.preventDefault();
+					event.stopPropagation();
+					update((current) =>
+						placeFolder(current, movingFolder, folderId, "inside"),
+					);
+				}
+				return;
+			}
+			const workspaceId = event.dataTransfer?.getData("text/plain") ?? "";
+			if (
+				workspaceId !== "" &&
+				knownWorkspace(workspaceId) &&
+				workspaceId !== section
+			) {
+				update((current) =>
+					assignWorkspace(
+						current,
+						workspaceId,
+						folderId === UNASSIGNED_ID ? undefined : folderId,
+					),
+				);
+			}
+		};
+		const onEnd = () => {
+			setSectionTarget(null);
+		};
+		const onLeave = (event: globalThis.DragEvent) => {
+			if (
+				!(event.relatedTarget instanceof Node) ||
+				!tree.contains(event.relatedTarget)
+			) {
+				setSectionTarget(null);
+			}
+		};
+		tree.addEventListener("dragleave", onLeave, true);
+		tree.addEventListener("dragover", onOver, true);
+		tree.addEventListener("drop", onDrop, true);
+		document.addEventListener("dragend", onEnd, true);
+		document.addEventListener("drop", onEnd, true);
+		return () => {
+			tree.removeEventListener("dragleave", onLeave, true);
+			tree.removeEventListener("dragover", onOver, true);
+			tree.removeEventListener("drop", onDrop, true);
+			document.removeEventListener("dragend", onEnd, true);
+			document.removeEventListener("drop", onEnd, true);
+		};
+	});
 
 	useEffect(() => {
 		if (!ready) {
@@ -1055,16 +1200,16 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 		} else if (id === "delete") {
 			setDialog({ kind: "delete", folder });
 		} else if (id === "up" || id === "down") {
-			store.update((current) =>
+			update((current) =>
 				shiftFolder(current, folder.id, id === "up" ? -1 : 1),
 			);
 		} else if (id.startsWith("assign:")) {
-			store.update((current) =>
+			update((current) =>
 				assignWorkspace(current, id.slice("assign:".length), folder.id),
 			);
 		} else if (id.startsWith("move:")) {
 			const target = id.slice("move:".length);
-			store.update((current) =>
+			update((current) =>
 				moveFolder(current, folder.id, target === "" ? undefined : target),
 			);
 		}
@@ -1075,13 +1220,15 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 			? null
 			: layout.rows
 					.filter((row) => !row.hidden)
-					.map((row) => {
+					.map((row, index) => {
 						const folder = row.folder;
 						const key = folder?.id ?? UNASSIGNED_ID;
 						return (
 							<HeadingRowView
 								key={`dwf:${key}`}
 								row={row}
+								highlighted={sectionTarget === key}
+								first={index === 0}
 								label={folder?.name ?? t.unassigned}
 								t={t}
 								menuItems={
@@ -1103,17 +1250,17 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 									}
 								}}
 								onToggle={() => {
-									store.update((current) => toggleCollapsed(current, key));
+									update((current) => toggleCollapsed(current, key));
 								}}
 								onDropWorkspace={(workspaceId) => {
 									if (knownWorkspace(workspaceId)) {
-										store.update((current) =>
+										update((current) =>
 											assignWorkspace(current, workspaceId, folder?.id),
 										);
 									}
 								}}
 								onDropFolder={(folderId, position) => {
-									store.update((current) =>
+									update((current) =>
 										folder === undefined
 											? moveFolder(current, folderId)
 											: placeFolder(current, folderId, folder.id, position),

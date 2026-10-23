@@ -93,6 +93,10 @@ export function layoutCss(layout: FolderLayout): string {
 	const rules = [
 		`${TREE_SELECTOR}:has(> .dwf-row){display:flex;flex-direction:column}`,
 		`${TREE_SELECTOR}:has(> .dwf-row) > *{flex:none}`,
+		// 純正はDOM上の最初のProjectの目印を一覧上端へ逃がすが 視覚順では別の位置になる
+		`${SLOT_SELECTOR} :has(> ${'[role="tree"]'} > .dwf-row) > [class*="_listTopDropIndicator"]{display:none !important}`,
+		`${TREE_SELECTOR}:has(> .dwf-row) > [class*="_workspaceDropBefore"]:before{display:block !important;left:var(--dsh-workspace-indent,0px)}`,
+		`${TREE_SELECTOR}:has(> .dwf-row) > [class*="_workspaceDropAfter"]:after{left:var(--dsh-workspace-indent,0px)}`,
 	];
 	for (const [workspaceId, placement] of layout.sections) {
 		const body = placement.hidden

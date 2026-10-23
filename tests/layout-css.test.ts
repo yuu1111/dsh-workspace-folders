@@ -32,7 +32,7 @@ describe("layoutCss", () => {
 		expect(css).toContain(
 			'[data-slot="sidebar.workspaces"] [role="tree"] > :has(> * > [data-row-key="workspace:a"])',
 		);
-		expect(css).toContain("order:2;--dsh-workspace-indent:22px !important");
+		expect(css).toContain("order:2;--dsh-workspace-indent:36px !important");
 		expect(css).toContain("display:flex;flex-direction:column");
 	});
 
@@ -49,7 +49,7 @@ describe("layoutCss", () => {
 	test("段ごとに親の三角の真下へ案内線を引く", () => {
 		expect(guideBackground(0)).toBe("");
 		const two = guideBackground(2);
-		expect(two).toContain("background-position:15px 0,37px 0");
+		expect(two).toContain("background-position:15px 0,51px 0");
 		expect(two.match(/linear-gradient/g)).toHaveLength(2);
 	});
 
