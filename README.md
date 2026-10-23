@@ -48,6 +48,11 @@ own bundle patch, so the profile's `cordis.patch.yml` needs no edit. Restart
 | Use your own image | "+" under Custom in the picker, or drop or paste an image into the picker |
 | Collapse / expand | Click the folder row; a collapsed folder shows how many workspaces it holds |
 
+A workspace row and a folder row show the strongest Session status inside them
+left of their icon, using the shipped status colors: amber while a Session waits
+for you, a spinner while one runs, and green for an unread completion. A folder
+counts its subfolders too, and archived Sessions are not counted.
+
 Deleting a folder moves its workspaces and subfolders up one level. Workspaces
 and Sessions themselves are never deleted.
 

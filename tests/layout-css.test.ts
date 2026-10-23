@@ -5,7 +5,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { guideBackground, iconCss, layoutCss, quote } from "../src/layout-css";
+import {
+	activityCss,
+	guideBackground,
+	iconCss,
+	layoutCss,
+	quote,
+} from "../src/layout-css";
 import {
 	assignWorkspace,
 	computeLayout,
@@ -79,6 +85,16 @@ describe("layoutCss", () => {
 		);
 		expect(css).toContain('background:url("data:image/png;base64,x")');
 		expect(css).not.toContain("workspace:c");
+	});
+
+	test("ワークスペース行の疑似要素で 字下げに合わせてアイコンの左へ状態を出す", () => {
+		expect(activityCss(new Map())).toBe("");
+		const css = activityCss(new Map([["a", "done"]]));
+		expect(css).toContain(
+			'[data-slot="sidebar.workspaces"] [data-row-key="workspace:a"]::before{content:""',
+		);
+		expect(css).toContain("var(--dsh-workspace-indent,0px)");
+		expect(css).toContain("var(--dsw-alias-state-success-primary)");
 	});
 
 	test("属性値の引用符と円記号を逃がす", () => {

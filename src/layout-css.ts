@@ -4,6 +4,7 @@
  * DOM に触れない純粋な関数だけを置く 純正の構造に依存する場所はここへ集める
  */
 
+import type { Activity } from "./activity";
 import { type FolderLayout, INDENT_PX } from "./model";
 
 /**
@@ -128,6 +129,110 @@ export function iconCss(
 			? `background:currentColor;-webkit-mask:${url} center/contain no-repeat;mask:${url} center/contain no-repeat`
 			: `background:${url} center/contain no-repeat`;
 		rules.push(`${slot}::before{content:"";width:16px;height:16px;${paint}}`);
+	}
+	return rules.join("\n");
+}
+
+/**
+ * 状態ごとの色 純正の StateDot と同じトークン
+ */
+const ACTIVITY_COLOR: Readonly<Record<Activity, string>> = {
+	done: "var(--dsw-alias-state-success-primary)",
+	warning: "var(--dsw-alias-state-warn-primary)",
+	ongoing: "var(--dsw-alias-label-tertiary)",
+};
+
+/**
+ * 進行中の輪 純正の StateDot の薄い輪と弧を mask にして文字色で塗る
+ */
+const SPINNER_MASK = `url("data:image/svg+xml,${encodeURIComponent(
+	'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="9.5" opacity=".25"/><circle cx="12" cy="12" r="9.5" stroke-dasharray="15 150"/></svg>',
+)}") center/contain no-repeat`;
+
+/**
+ * 字下げの無い行での印の中心の横位置 行の左の余白 8px の真ん中
+ */
+const ACTIVITY_CENTER_PX = 4;
+
+/**
+ * 字下げのある行で 字下げの端から印の中心を左へ離す量
+ *
+ * アイコンに寄せすぎると窮屈に見えるため 親の案内線との間へ置く
+ */
+const ACTIVITY_INSET_PX = 9;
+
+/**
+ * 回る輪のアニメーション名
+ */
+const SPIN_NAME = "dwf-activity-spin";
+
+/**
+ * 行の左に出す状態の印の宣言
+ *
+ * 印は行の流れに入れず 字下げの中へ浮かせる そのため印の有無で アイコンと
+ * 名前の位置は動かない 字下げの無い行では行の左の余白へ置く
+ *
+ * @param activity - 出す状態
+ * @param indentVar - 行の字下げを持つ CSS 変数
+ * @returns 宣言 位置と見た目
+ */
+export function activityDeclarations(
+	activity: Activity,
+	indentVar: string,
+): string {
+	const size = activity === "ongoing" ? 8 : 6;
+	const paint =
+		activity === "ongoing"
+			? `-webkit-mask:${SPINNER_MASK};mask:${SPINNER_MASK};animation:${SPIN_NAME} 1.5s linear infinite`
+			: "border-radius:50%";
+	return [
+		"position:absolute",
+		"pointer-events:none",
+		`width:${size}px`,
+		`height:${size}px`,
+		`top:calc(50% - ${size / 2}px)`,
+		`left:max(${ACTIVITY_CENTER_PX - size / 2}px,calc(var(${indentVar},0px) - ${ACTIVITY_INSET_PX + size / 2}px))`,
+		`background:${ACTIVITY_COLOR[activity]}`,
+		paint,
+	].join(";");
+}
+
+/**
+ * フォルダの見出し行の印と 回る輪のアニメーションの CSS
+ *
+ * 見出し行は `data-state` を持つ span で印を出す
+ *
+ * @returns スタイルシートの本文
+ */
+export function activityStyle(): string {
+	const states: Activity[] = ["done", "ongoing", "warning"];
+	return [
+		...states.map(
+			(activity) =>
+				`.dwf-activity[data-state="${activity}"]{${activityDeclarations(activity, "--dwf-indent")}}`,
+		),
+		`@keyframes ${SPIN_NAME}{to{transform:rotate(360deg)}}`,
+		`@media (prefers-reduced-motion:reduce){.dwf-activity,[data-row-key]::before{animation:none !important}}`,
+	].join("\n");
+}
+
+/**
+ * 純正のワークスペース行のアイコンの左へ 中のセッションの状態を出す CSS
+ *
+ * 純正の行へは書き込まず 行の疑似要素で描く フォルダが無くても効かせるため
+ * 並びの CSS とは別に作る
+ *
+ * @param activities - ワークスペース id から状態への対応
+ * @returns スタイルシートの本文 状態が無ければ空文字
+ */
+export function activityCss(activities: ReadonlyMap<string, Activity>): string {
+	const rules: string[] = [];
+	for (const [workspaceId, activity] of activities) {
+		const row = `${SLOT_SELECTOR} [data-row-key=${quote(ROW_KEY_PREFIX + workspaceId)}]`;
+		rules.push(
+			`${row}{position:relative}`,
+			`${row}::before{content:"";${activityDeclarations(activity, "--dsh-workspace-indent")}}`,
+		);
 	}
 	return rules.join("\n");
 }

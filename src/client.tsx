@@ -42,6 +42,14 @@ import {
 	useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+	type Activity,
+	folderActivities,
+	type SessionStatusFacts,
+	sessionActivity,
+	strongerActivity,
+	workspaceActivities,
+} from "./activity";
 import { type Messages, messagesFor } from "./i18n";
 import { IconPicker } from "./icon-picker";
 import {
@@ -51,6 +59,8 @@ import {
 	IconGlyph,
 } from "./icons";
 import {
+	activityCss,
+	activityStyle,
 	guideBackground,
 	iconCss,
 	layoutCss,
@@ -199,6 +209,16 @@ const LAYOUT_TAG_ID = "dsh-workspace-folders/layout.css";
 const ICON_TAG_ID = "dsh-workspace-folders/icons.css";
 
 /**
+ * ワークスペース行へ中のセッションの状態を出すスタイルタグの識別子
+ */
+const ACTIVITY_TAG_ID = "dsh-workspace-folders/activity.css";
+
+/**
+ * 状態が1つも無いときの対応 毎回同じ値を渡して描き直しを避ける
+ */
+const NO_ACTIVITIES: ReadonlyMap<string, Activity> = new Map();
+
+/**
  * このプラグインが待つサービス
  */
 export const inject = ["slots"];
@@ -209,6 +229,25 @@ export const inject = ["slots"];
 interface WorkspaceRow {
 	workspaceId: string;
 	title: string;
+	sessionIds?: readonly string[];
+}
+
+/**
+ * 純正のセッション一覧のうち ここで読むもの
+ */
+interface SessionList {
+	byId: Readonly<Record<string, { running?: boolean } | undefined>>;
+	projectionsBySession?: Readonly<
+		Record<
+			string,
+			| {
+					values?: {
+						subagentCatalog?: readonly { id: string }[] | undefined;
+					};
+			  }
+			| undefined
+		>
+	>;
 }
 
 /**
@@ -221,7 +260,18 @@ interface OverlayProps {
 		selector: (snapshot: {
 			items: readonly WorkspaceRow[];
 			phase: string;
+			archivedSessionIds?: readonly string[];
 		}) => T,
+	) => T;
+	/**
+	 * ui-session が根へ配るセッション一覧の読み口
+	 */
+	useSessions?: <T>(selector: (snapshot: SessionList) => T) => T;
+	/**
+	 * ui-session が根へ配るセッションの状態の読み口
+	 */
+	useSessionStatus?: <T>(
+		selector: (snapshot: ReadonlyMap<string, SessionStatusFacts>) => T,
 	) => T;
 }
 
@@ -558,9 +608,11 @@ function HeadingRowView({
 	onDropFolder,
 	highlighted,
 	first,
+	activity,
 	t,
 }: {
 	row: HeadingRow;
+	activity: Activity | undefined;
 	label: string;
 	menuItems: readonly MenuEntry[];
 	onMenuSelect: (id: string) => void;
@@ -646,6 +698,9 @@ function HeadingRowView({
 				}
 			}}
 		>
+			{activity !== undefined && (
+				<span className="dwf-activity" data-state={activity} aria-hidden />
+			)}
 			<span className="dwf-slot">
 				<IconTriangleRightFillRegular
 					className={row.collapsed ? "dwf-arrow" : "dwf-arrow dwf-arrowOpen"}
@@ -1167,6 +1222,7 @@ function closeShippedMenu(): void {
 function useWorkspaceRows(useWorkspaces: OverlayProps["useWorkspaces"]): {
 	rows: readonly WorkspaceRow[];
 	ready: boolean;
+	archived: readonly string[] | undefined;
 } {
 	const fallback = (
 		selector: (snapshot: {
@@ -1179,7 +1235,74 @@ function useWorkspaceRows(useWorkspaces: OverlayProps["useWorkspaces"]): {
 	>;
 	const items = read((snapshot) => snapshot.items);
 	const phase = read((snapshot) => snapshot.phase);
-	return { rows: items, ready: phase === "ready" };
+	const archived = read((snapshot) => snapshot.archivedSessionIds);
+	return { rows: items, ready: phase === "ready", archived };
+}
+
+/**
+ * 空の読み口 ui-session が無い構成で使う
+ *
+ * @param selector - 読む関数
+ * @returns 何も無いときの値
+ */
+function noSource<T>(selector: (snapshot: never) => T): T {
+	return selector(undefined as never);
+}
+
+/**
+ * ワークスペースごとに 中のセッションの一番強い状態を読む
+ *
+ * 純正のセッション行と同じく 走っているサブエージェントも進行中に数える
+ *
+ * @param props - 浮き層が配る読み口と ワークスペース
+ * @returns 状態のあるワークスペースだけの対応
+ */
+function useWorkspaceActivities({
+	useSessions,
+	useSessionStatus,
+	workspaces,
+	archived,
+}: {
+	useSessions: OverlayProps["useSessions"];
+	useSessionStatus: OverlayProps["useSessionStatus"];
+	workspaces: readonly WorkspaceRow[];
+	archived: readonly string[] | undefined;
+}): ReadonlyMap<string, Activity> {
+	const readSessions = (useSessions ?? noSource) as NonNullable<
+		OverlayProps["useSessions"]
+	>;
+	const readStatus = (useSessionStatus ?? noSource) as NonNullable<
+		OverlayProps["useSessionStatus"]
+	>;
+	const list = readSessions((snapshot) => snapshot as SessionList | undefined);
+	const statuses = readStatus(
+		(snapshot) =>
+			snapshot as ReadonlyMap<string, SessionStatusFacts> | undefined,
+	);
+	return useMemo(() => {
+		if (list === undefined && statuses === undefined) {
+			return NO_ACTIVITIES;
+		}
+		const running = (id: string) =>
+			(statuses?.get(id)?.running ?? list?.byId[id]?.running) === true;
+		const activities = workspaceActivities(
+			workspaces,
+			new Set(archived ?? []),
+			(sessionId) => {
+				const own = sessionActivity(
+					statuses?.get(sessionId),
+					list?.byId[sessionId]?.running,
+				);
+				const children =
+					list?.projectionsBySession?.[sessionId]?.values?.subagentCatalog ??
+					[];
+				return children.some((child) => running(child.id))
+					? strongerActivity(own, "ongoing")
+					: own;
+			},
+		);
+		return activities.size === 0 ? NO_ACTIVITIES : activities;
+	}, [list, statuses, workspaces, archived]);
 }
 
 /**
@@ -1188,7 +1311,11 @@ function useWorkspaceRows(useWorkspaces: OverlayProps["useWorkspaces"]): {
  * @param props - 浮き層が配る props
  * @returns ポータルとダイアログ
  */
-function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
+function WorkspaceFolders({
+	useWorkspaces,
+	useSessions,
+	useSessionStatus,
+}: OverlayProps) {
 	const t = useMessages();
 	const state = useSyncExternalStore(
 		store.subscribe,
@@ -1196,7 +1323,21 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 		store.getServerSnapshot,
 	);
 	const { tree, header, sectionIds } = useSurface();
-	const { rows: workspaces, ready } = useWorkspaceRows(useWorkspaces);
+	const { rows: workspaces, ready, archived } = useWorkspaceRows(useWorkspaces);
+	const workspaceActivity = useWorkspaceActivities({
+		useSessions,
+		useSessionStatus,
+		workspaces,
+		archived,
+	});
+	const folderActivity = useMemo(
+		() => folderActivities(state, workspaceActivity),
+		[state, workspaceActivity],
+	);
+	useLayoutEffect(
+		() => installStyle(ACTIVITY_TAG_ID, activityCss(workspaceActivity)),
+		[workspaceActivity],
+	);
 	const [dialog, setDialog] = useState<Dialog | null>(null);
 	const layout = useMemo(
 		() => computeLayout(state, sectionIds),
@@ -1422,6 +1563,7 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 								key={`dwf:${key}`}
 								row={row}
 								highlighted={sectionTarget === key}
+								activity={folderActivity.get(key)}
 								first={index === 0}
 								label={folder?.name ?? t.unassigned}
 								t={t}
@@ -1511,13 +1653,14 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
  */
 export function apply(ctx: Context): void {
 	ctx.effect(
-		() => installStyle(STYLE_TAG_ID, STYLE),
+		() => installStyle(STYLE_TAG_ID, STYLE + activityStyle()),
 		"workspace-folders: style",
 	);
 	ctx.effect(
 		() => () => {
 			document.getElementById(LAYOUT_TAG_ID)?.remove();
 			document.getElementById(ICON_TAG_ID)?.remove();
+			document.getElementById(ACTIVITY_TAG_ID)?.remove();
 		},
 		"workspace-folders: layout cleanup",
 	);
