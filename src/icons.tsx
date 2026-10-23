@@ -1,7 +1,8 @@
 /**
  * フォルダとワークスペースに付けるアイコンの描画
  *
- * 値が {@link DSH_ICON_PREFIX} で始まれば DSH 純正のアイコン それ以外は絵文字として描く
+ * 値が {@link DSH_ICON_PREFIX} で始まれば DSH 純正のアイコン
+ * {@link CUSTOM_ICON_PREFIX} で始まれば利用者が追加した画像 それ以外は絵文字として描く
  */
 
 import {
@@ -51,8 +52,30 @@ import {
 	IconWarningTriangleOutlineRegular,
 	IconWorkspaceTreeOutlineRegular,
 } from "@deepseek-ai/dsh-client-ui-primitives";
-import type { ComponentType } from "react";
+import { type ComponentType, createContext, useContext } from "react";
 import { DSH_ICON_PREFIX, normalizeQuery } from "./icon-catalog";
+import { CUSTOM_ICON_PREFIX, type CustomIcon } from "./model";
+
+/**
+ * 利用者が追加した画像のアイコン 描く場所まで状態を渡さずに引けるようにする
+ */
+export const CustomIconsContext = createContext<readonly CustomIcon[]>([]);
+
+/**
+ * 値から 利用者が追加した画像のアイコンを引く
+ *
+ * @param icons - 追加されたアイコン
+ * @param value - 保存された値
+ * @returns アイコン 画像の値でないか消されていれば undefined
+ */
+export function customIconOf(
+	icons: readonly CustomIcon[],
+	value: string,
+): CustomIcon | undefined {
+	return value.startsWith(CUSTOM_ICON_PREFIX)
+		? icons.find((icon) => CUSTOM_ICON_PREFIX + icon.id === value)
+		: undefined;
+}
 
 /**
  * 選べる DSH 純正のアイコン1つ
@@ -205,16 +228,43 @@ export function dshIconOf(value: string): DshIcon | undefined {
  * 保存されたアイコンの値を描く
  *
  * @param props - 値と大きさ
- * @returns 純正のアイコンか絵文字
+ * @returns 純正のアイコンか画像か絵文字
  */
 export function IconGlyph({ value, size }: { value: string; size?: number }) {
+	const custom = customIconOf(useContext(CustomIconsContext), value);
+	const edge = size ?? 16;
+	if (custom !== undefined) {
+		return custom.tint === true ? (
+			<span
+				className="dwf-customTint"
+				style={{
+					width: edge,
+					height: edge,
+					maskImage: `url("${custom.src}")`,
+					WebkitMaskImage: `url("${custom.src}")`,
+				}}
+			/>
+		) : (
+			<img
+				className="dwf-customImage"
+				src={custom.src}
+				alt=""
+				width={edge}
+				height={edge}
+				draggable={false}
+			/>
+		);
+	}
 	const icon = dshIconOf(value);
 	if (icon !== undefined) {
 		const Component = icon.component;
-		return <Component size={size ?? 16} />;
+		return <Component size={edge} />;
 	}
-	if (value.startsWith(DSH_ICON_PREFIX)) {
-		return <IconFolderCloseRegular size={size ?? 16} />;
+	if (
+		value.startsWith(DSH_ICON_PREFIX) ||
+		value.startsWith(CUSTOM_ICON_PREFIX)
+	) {
+		return <IconFolderCloseRegular size={edge} />;
 	}
 	return <span className="dwf-emoji">{value}</span>;
 }

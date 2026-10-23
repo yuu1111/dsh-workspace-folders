@@ -5,6 +5,8 @@
 import { describe, expect, test } from "bun:test";
 import {
 	buildEmojiCatalog,
+	iconNameFromFile,
+	isMonochrome,
 	matchesQuery,
 	normalizeQuery,
 	pushRecent,
@@ -75,4 +77,45 @@ describe("検索", () => {
 test("最近使ったものは先頭へ寄せ 重なりを除き 数を絞る", () => {
 	expect(pushRecent(["a", "b", "c"], "c", 3)).toEqual(["c", "a", "b"]);
 	expect(pushRecent(["a", "b", "c"], "d", 3)).toEqual(["d", "a", "b"]);
+});
+
+describe("isMonochrome", () => {
+	/**
+	 * 透過の背景の上に 色を並べた画素を作る
+	 *
+	 * @param colors - 見える画素の色
+	 * @returns RGBA の並び 背景は見える画素と同じ数だけ置く
+	 */
+	const pixels = (colors: readonly (readonly [number, number, number])[]) => [
+		...colors.flatMap(([r, g, b]) => [r, g, b, 255]),
+		...colors.flatMap(() => [0, 0, 0, 0]),
+	];
+
+	test("透過の上の黒一色のロゴは塗る", () => {
+		expect(
+			isMonochrome(
+				pixels([
+					[0, 0, 0],
+					[20, 20, 20],
+				]),
+			),
+		).toBe(true);
+	});
+
+	test("色のあるロゴと 背景の塗られた写真は塗らない", () => {
+		expect(
+			isMonochrome(
+				pixels([
+					[0, 0, 0],
+					[255, 80, 0],
+				]),
+			),
+		).toBe(false);
+		expect(isMonochrome([0, 0, 0, 255, 10, 10, 10, 255])).toBe(false);
+	});
+});
+
+test("ファイル名から拡張子を除いて名前にする", () => {
+	expect(iconNameFromFile("github-mark.svg")).toBe("github-mark");
+	expect(iconNameFromFile(".png")).toBe("image");
 });

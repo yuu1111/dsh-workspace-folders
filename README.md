@@ -4,7 +4,8 @@ English | [日本語](README.ja.md)
 
 A DeepSeek Harness Web GUI plugin that groups sidebar workspaces into folders.
 Folders nest, and folders and workspaces can each carry an icon: any emoji or
-one of the DSH UI icons, picked from a searchable Discord-style picker.
+one of the DSH UI icons, picked from a searchable Discord-style picker. You can
+also add your own images, such as logos.
 
 ```
 ▾ 🛠️ DSH plugins
@@ -44,6 +45,7 @@ own bundle patch, so the profile's `cordis.patch.yml` needs no edit. Restart
 | Nest a folder | Drag a folder row onto the middle of another, or "..." → Move to |
 | Change the icon | Folder "..." → Change icon |
 | Change a workspace's icon | Workspace "..." → Change icon |
+| Use your own image | "+" under Custom in the picker, or drop or paste an image into the picker |
 | Collapse / expand | Click the folder row; a collapsed folder shows how many workspaces it holds |
 
 Deleting a folder moves its workspaces and subfolders up one level. Workspaces
@@ -51,9 +53,14 @@ and Sessions themselves are never deleted.
 
 While no folder exists, the plugin leaves the shipped list untouched.
 
+Added images are scaled down to a 64px PNG. A single-color logo on a
+transparent background is painted with the theme's text color, so it stays
+visible in the dark theme. Remove an image with the "×" that appears on hover;
+folders and workspaces that used it go back to the default icon.
+
 ## Storage
 
-Folders, assignments, and workspace icons live in the browser's `localStorage`
+Folders, assignments, icons, and added images live in the browser's `localStorage`
 (`dsh-workspace-folders.state.v1`). They are per browser and never change
 DSH's workspace registry or its order.
 

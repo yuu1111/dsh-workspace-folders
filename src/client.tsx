@@ -44,7 +44,12 @@ import {
 import { createPortal } from "react-dom";
 import { type Messages, messagesFor } from "./i18n";
 import { IconPicker } from "./icon-picker";
-import { DSH_ICONS, IconGlyph } from "./icons";
+import {
+	CustomIconsContext,
+	customIconOf,
+	DSH_ICONS,
+	IconGlyph,
+} from "./icons";
 import {
 	guideBackground,
 	iconCss,
@@ -54,7 +59,9 @@ import {
 	SLOT_SELECTOR,
 } from "./layout-css";
 import {
+	addCustomIcons,
 	assignWorkspace,
+	type CustomIcon,
 	childFolders,
 	computeLayout,
 	createFolder,
@@ -71,6 +78,7 @@ import {
 	parseState,
 	placeFolder,
 	pruneWorkspaces,
+	removeCustomIcon,
 	renameFolder,
 	setFolderIcon,
 	setWorkspaceIcon,
@@ -91,6 +99,11 @@ const OVERLAY = "shell.overlay";
  * 登録 id
  */
 const ENTRY_ID = "workspace-folders";
+
+/**
+ * 画像のアイコンが1つも無いときの並び 毎回同じ値を渡して描き直しを避ける
+ */
+const NO_CUSTOM_ICONS: readonly CustomIcon[] = [];
 
 /**
  * 状態を保存する localStorage のキー
@@ -153,6 +166,17 @@ const STYLE = `
 .dwf-pickerFooter{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
 .dwf-pickerPreview{width:28px;height:28px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-primary)}
 .dwf-pickerPreview .dwf-emoji{font-size:24px}
+.dwf-picker{position:relative}
+.dwf-pickerCell{position:relative;display:block}
+.dwf-pickerCell .dwf-pickerItem{width:100%}
+.dwf-pickerRemove{position:absolute;top:-3px;right:-3px;width:16px;height:16px;border-radius:50%;border:none;padding:0;cursor:pointer;display:none;align-items:center;justify-content:center;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);box-shadow:0 0 0 .5px var(--dsw-alias-border-l4)}
+.dwf-pickerCell:hover .dwf-pickerRemove,.dwf-pickerRemove:focus-visible{display:inline-flex}
+.dwf-pickerRemove:hover{color:var(--dsw-alias-state-error-primary,#e5484d)}
+.dwf-pickerAdd{border:1px dashed var(--dsw-alias-border-l4);color:var(--dsw-alias-label-tertiary)}
+.dwf-pickerCustomHint{margin:6px 4px 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+.dwf-pickerDrop{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--dsw-alias-state-business-primary);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 85%,transparent);border:2px dashed var(--dsw-alias-state-business-primary);border-radius:var(--dsw-radius-md);pointer-events:none}
+.dwf-customImage{display:block;object-fit:contain}
+.dwf-customTint{display:inline-block;background:currentColor;-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center}
 .dwf-pickerName{flex:1;min-width:0;font-size:13px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dwf-modalBody{display:flex;flex-direction:column;gap:8px}
 .dwf-modalText{color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;margin:0}
@@ -841,6 +865,24 @@ function NameDialog({
 }
 
 /**
+ * 画像のアイコンを保存する
+ *
+ * @param icons - 足すアイコン
+ */
+function addCustom(icons: readonly CustomIcon[]): void {
+	store.update((state) => addCustomIcons(state, icons));
+}
+
+/**
+ * 画像のアイコンを消す 使っていたフォルダとワークスペースは既定へ戻る
+ *
+ * @param id - 消すアイコン
+ */
+function removeCustom(id: string): void {
+	store.update((state) => removeCustomIcon(state, id));
+}
+
+/**
  * 開いているダイアログを描く
  *
  * @param props - ダイアログと閉じる処理
@@ -902,6 +944,9 @@ function DialogView({
 					value={dialog.folder.icon ?? ""}
 					onClose={onClose}
 					t={t}
+					newId={newId}
+					onAddCustom={addCustom}
+					onRemoveCustom={removeCustom}
 					onConfirm={(icon) => {
 						store.update((state) =>
 							setFolderIcon(state, dialog.folder.id, icon),
@@ -917,6 +962,9 @@ function DialogView({
 					value={store.getSnapshot().icons?.[dialog.workspaceId] ?? ""}
 					onClose={onClose}
 					t={t}
+					newId={newId}
+					onAddCustom={addCustom}
+					onRemoveCustom={removeCustom}
 					onConfirm={(icon) => {
 						store.update((state) =>
 							setWorkspaceIcon(state, dialog.workspaceId, icon),
@@ -1183,8 +1231,21 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 		setSvgs(map);
 	}, []);
 	const icons = useMemo(
-		() => iconCss(state.icons, (value) => svgs.get(value)),
-		[state.icons, svgs],
+		() =>
+			iconCss(state.icons, (value) => {
+				const custom = customIconOf(state.customIcons ?? [], value);
+				if (custom !== undefined) {
+					return { src: custom.src, tint: custom.tint === true };
+				}
+				const svg = svgs.get(value);
+				return svg === undefined
+					? undefined
+					: {
+							src: `data:image/svg+xml,${encodeURIComponent(svg)}`,
+							tint: true,
+						};
+			}),
+		[state.icons, state.customIcons, svgs],
 	);
 	useLayoutEffect(() => installStyle(ICON_TAG_ID, icons), [icons]);
 
@@ -1404,7 +1465,7 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 					});
 
 	return (
-		<>
+		<CustomIconsContext.Provider value={state.customIcons ?? NO_CUSTOM_ICONS}>
 			{tree !== null && headings !== null && createPortal(headings, tree)}
 			{header !== null &&
 				createPortal(
@@ -1439,7 +1500,7 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 					setDialog(null);
 				}}
 			/>
-		</>
+		</CustomIconsContext.Provider>
 	);
 }
 

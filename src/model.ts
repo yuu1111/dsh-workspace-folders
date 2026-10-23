@@ -32,6 +32,33 @@ export interface Folder {
 }
 
 /**
+ * 利用者が追加した画像のアイコン
+ */
+export interface CustomIcon {
+	/**
+	 * 生成時に決める識別子 値は {@link CUSTOM_ICON_PREFIX} を前に付けて使う
+	 */
+	id: string;
+	/**
+	 * 検索と表示に使う名前
+	 */
+	name: string;
+	/**
+	 * 縮めた画像の data URL
+	 */
+	src: string;
+	/**
+	 * 形だけを使い 文字色で塗るか 単色のロゴのとき true
+	 */
+	tint?: boolean;
+}
+
+/**
+ * 利用者が追加した画像のアイコンを指す値の接頭辞
+ */
+export const CUSTOM_ICON_PREFIX = "custom:";
+
+/**
  * 保存する状態の全体
  */
 export interface FolderState {
@@ -57,6 +84,10 @@ export interface FolderState {
 	 * 後から足した任意の項目なので 版は上げない
 	 */
 	icons?: Record<string, string>;
+	/**
+	 * 利用者が追加した画像のアイコン 追加した順
+	 */
+	customIcons?: CustomIcon[];
 }
 
 /**
@@ -179,6 +210,36 @@ function parseIcons(value: unknown): Record<string, string> | undefined {
 }
 
 /**
+ * 保存された画像のアイコンを読む 画像の data URL でないものと重なる id は捨てる
+ *
+ * @param value - 保存された値
+ * @returns 読めたアイコン 1つも無ければ undefined
+ */
+function parseCustomIcons(value: unknown): CustomIcon[] | undefined {
+	const seen = new Set<string>();
+	const icons: CustomIcon[] = [];
+	for (const entry of Array.isArray(value) ? value : []) {
+		if (!isRecord(entry)) {
+			continue;
+		}
+		const { id, name, src, tint } = entry;
+		if (
+			typeof id !== "string" ||
+			id === "" ||
+			seen.has(id) ||
+			typeof name !== "string" ||
+			typeof src !== "string" ||
+			!src.startsWith("data:image/")
+		) {
+			continue;
+		}
+		seen.add(id);
+		icons.push(tint === true ? { id, name, src, tint } : { id, name, src });
+	}
+	return icons.length === 0 ? undefined : icons;
+}
+
+/**
  * 親の鎖が輪になっていたら そのフォルダを最上位へ戻す
  *
  * 手で書き換えた保存値でも描画が止まらないようにする
@@ -241,6 +302,10 @@ export function parseState(raw: string | null): FolderState {
 	const icons = parseIcons(value.icons);
 	if (icons !== undefined) {
 		state.icons = icons;
+	}
+	const customIcons = parseCustomIcons(value.customIcons);
+	if (customIcons !== undefined) {
+		state.customIcons = customIcons;
 	}
 	return state;
 }
@@ -347,6 +412,57 @@ export function setWorkspaceIcon(
 	const { [workspaceId]: _old, ...others } = current ?? {};
 	const icons = icon === "" ? others : { ...others, [workspaceId]: icon };
 	return Object.keys(icons).length === 0 ? rest : { ...rest, icons };
+}
+
+/**
+ * 画像のアイコンを足す
+ *
+ * @param state - 今の状態
+ * @param added - 足すアイコン
+ * @returns 新しい状態
+ */
+export function addCustomIcons(
+	state: FolderState,
+	added: readonly CustomIcon[],
+): FolderState {
+	return added.length === 0
+		? state
+		: { ...state, customIcons: [...(state.customIcons ?? []), ...added] };
+}
+
+/**
+ * 画像のアイコンを消す
+ *
+ * 使っているフォルダとワークスペースは既定のアイコンへ戻す
+ *
+ * @param state - 今の状態
+ * @param id - 消すアイコン
+ * @returns 新しい状態
+ */
+export function removeCustomIcon(state: FolderState, id: string): FolderState {
+	const value = CUSTOM_ICON_PREFIX + id;
+	const { customIcons: current, icons: currentIcons, ...rest } = state;
+	const next: FolderState = {
+		...rest,
+		folders: state.folders.map((folder) => {
+			if (folder.icon !== value) {
+				return folder;
+			}
+			const { icon: _old, ...plain } = folder;
+			return plain;
+		}),
+	};
+	const customIcons = (current ?? []).filter((icon) => icon.id !== id);
+	if (customIcons.length > 0) {
+		next.customIcons = customIcons;
+	}
+	const icons = Object.entries(currentIcons ?? {}).filter(
+		([, icon]) => icon !== value,
+	);
+	if (icons.length > 0) {
+		next.icons = Object.fromEntries(icons);
+	}
+	return next;
 }
 
 /**

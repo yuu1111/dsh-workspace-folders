@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+	addCustomIcons,
 	assignWorkspace,
 	childFolders,
 	computeLayout,
@@ -16,6 +17,7 @@ import {
 	parseState,
 	placeFolder,
 	pruneWorkspaces,
+	removeCustomIcon,
 	setFolderIcon,
 	setWorkspaceIcon,
 	shiftFolder,
@@ -209,6 +211,45 @@ describe("フォルダの並び替え", () => {
 		]);
 		expect(shiftFolder(down, "work", 1)).toBe(down);
 		expect(shiftFolder(state, "dsh", -1)).toBe(state);
+	});
+});
+
+describe("画像のアイコン", () => {
+	const logo = { id: "logo", name: "Logo", src: "data:image/png;base64,x" };
+
+	test("消すと 使っていたフォルダとワークスペースを既定へ戻す", () => {
+		let state = addCustomIcons(sample(), [logo]);
+		state = setFolderIcon(state, "work", "custom:logo");
+		state = setFolderIcon(state, "hobby", "🎮");
+		state = setWorkspaceIcon(state, "w-dsh", "custom:logo");
+		state = setWorkspaceIcon(state, "w-game", "🎮");
+		const removed = removeCustomIcon(state, "logo");
+		expect(removed.customIcons).toBeUndefined();
+		expect(
+			removed.folders.find((folder) => folder.id === "work")?.icon,
+		).toBeUndefined();
+		expect(removed.folders.find((folder) => folder.id === "hobby")?.icon).toBe(
+			"🎮",
+		);
+		expect(removed.icons).toEqual({ "w-game": "🎮" });
+	});
+
+	test("保存を往復し 画像でない値は読まない", () => {
+		const state = addCustomIcons(sample(), [{ ...logo, tint: true }]);
+		expect(parseState(JSON.stringify(state)).customIcons).toEqual([
+			{ ...logo, tint: true },
+		]);
+		const forged = parseState(
+			JSON.stringify({
+				...state,
+				customIcons: [
+					logo,
+					{ id: "x", name: "X", src: "javascript:alert(1)" },
+					{ ...logo, name: "dup" },
+				],
+			}),
+		);
+		expect(forged.customIcons).toEqual([logo]);
 	});
 });
 

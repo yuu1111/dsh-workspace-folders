@@ -62,13 +62,23 @@ describe("layoutCss", () => {
 		expect(css).toContain('::before{content:"🐋"');
 	});
 
-	test("DSH 純正のアイコンは svg を文字色で塗る mask にし 知らないものは描かない", () => {
-		const css = iconCss({ a: "dsh:code", b: "dsh:gone" }, (value) =>
-			value === "dsh:code" ? '<svg width="16"></svg>' : undefined,
+	test("塗る画像は文字色の mask に 塗らない画像は背景にし 引けない値は描かない", () => {
+		const css = iconCss(
+			{ a: "dsh:code", b: "custom:logo", c: "custom:gone" },
+			(value) => {
+				if (value === "dsh:code") {
+					return { src: "data:image/svg+xml,x", tint: true };
+				}
+				return value === "custom:logo"
+					? { src: "data:image/png;base64,x", tint: false }
+					: undefined;
+			},
 		);
-		expect(css).toContain("mask:url(");
-		expect(css).toContain("background:currentColor");
-		expect(css).not.toContain("workspace:b");
+		expect(css).toContain(
+			'background:currentColor;-webkit-mask:url("data:image/svg+xml,x")',
+		);
+		expect(css).toContain('background:url("data:image/png;base64,x")');
+		expect(css).not.toContain("workspace:c");
 	});
 
 	test("属性値の引用符と円記号を逃がす", () => {

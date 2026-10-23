@@ -3,18 +3,33 @@
  *
  * 上に検索欄 左にカテゴリの列 中央に見出し付きの格子 下に指している
  * アイコンの名前を出す 1つ押すとすぐに確定して閉じる
+ *
+ * 利用者は画像を追加でき 追加した画像は「カスタム」に並ぶ 画像はボタン
+ * ドラッグ アンド ドロップ 貼り付けのどれでも取り込める
  */
 
 import emojiCatalog from "virtual:emoji-catalog";
 import {
 	Button,
 	IconClockOutlineRegular,
+	IconCloseOutlineRegular,
+	IconPersonalizationOutlineRegular,
+	IconPlusOutlineRegular,
 	IconSearchOutlineRegular,
 	IconSparkleRegular,
 	Input,
 	Modal,
 } from "@deepseek-ai/dsh-client-ui-primitives";
-import { type ReactNode, useMemo, useRef, useState } from "react";
+import {
+	type ClipboardEvent,
+	type DragEvent,
+	type ReactNode,
+	useContext,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { customIconFromFile } from "./custom-icon";
 import type { Messages } from "./i18n";
 import {
 	type EmojiRow,
@@ -23,7 +38,14 @@ import {
 	pushRecent,
 	typedEmoji,
 } from "./icon-catalog";
-import { DSH_ICONS, dshIconOf, IconGlyph } from "./icons";
+import {
+	CustomIconsContext,
+	customIconOf,
+	DSH_ICONS,
+	dshIconOf,
+	IconGlyph,
+} from "./icons";
+import { CUSTOM_ICON_PREFIX, type CustomIcon } from "./model";
 
 /**
  * 最近使ったアイコンを保存する localStorage のキー
@@ -47,6 +69,10 @@ interface PickerItem {
 	 * 今の言語の名前
 	 */
 	label: string;
+	/**
+	 * 利用者が追加した画像なら その id 消すボタンを出す
+	 */
+	customId?: string;
 }
 
 /**
@@ -69,6 +95,10 @@ interface PickerSection {
 	 * 並ぶアイコン
 	 */
 	items: PickerItem[];
+	/**
+	 * 末尾に画像を追加するボタンを置くか
+	 */
+	addable?: boolean;
 }
 
 /**
@@ -136,9 +166,18 @@ function emojiItem(row: EmojiRow, ja: boolean): PickerItem {
  *
  * @param value - アイコンの値
  * @param ja - 日本語で出すか
+ * @param custom - 利用者が追加した画像
  * @returns 名前 表に無ければ値そのもの
  */
-function labelOf(value: string, ja: boolean): string {
+function labelOf(
+	value: string,
+	ja: boolean,
+	custom: readonly CustomIcon[],
+): string {
+	const image = customIconOf(custom, value);
+	if (image !== undefined) {
+		return image.name;
+	}
 	const icon = dshIconOf(value);
 	if (icon !== undefined) {
 		return ja ? icon.ja : icon.en;
@@ -151,26 +190,57 @@ function labelOf(value: string, ja: boolean): string {
 }
 
 /**
+ * 画像のアイコンを格子1つへ直す
+ *
+ * @param icon - 画像のアイコン
+ * @returns 格子1つ
+ */
+function customItem(icon: CustomIcon): PickerItem {
+	return {
+		value: CUSTOM_ICON_PREFIX + icon.id,
+		label: icon.name,
+		customId: icon.id,
+	};
+}
+
+/**
  * 検索していないときのまとまり
  *
  * @param recent - 最近使ったアイコン
+ * @param custom - 利用者が追加した画像
  * @param t - 文言
- * @returns 最近 DSH 絵文字の各グループの順のまとまり
+ * @returns 最近 カスタム DSH 絵文字の各グループの順のまとまり
  */
 function browseSections(
 	recent: readonly string[],
+	custom: readonly CustomIcon[],
 	t: Messages,
 ): PickerSection[] {
 	const ja = t.lang === "ja";
 	const sections: PickerSection[] = [];
-	if (recent.length > 0) {
+	const live = recent.filter(
+		(value) =>
+			!value.startsWith(CUSTOM_ICON_PREFIX) ||
+			customIconOf(custom, value) !== undefined,
+	);
+	if (live.length > 0) {
 		sections.push({
 			id: "recent",
 			title: t.pickerRecent,
 			mark: <IconClockOutlineRegular size={18} />,
-			items: recent.map((value) => ({ value, label: labelOf(value, ja) })),
+			items: live.map((value) => ({
+				value,
+				label: labelOf(value, ja, custom),
+			})),
 		});
 	}
+	sections.push({
+		id: "custom",
+		title: t.pickerCustom,
+		mark: <IconPersonalizationOutlineRegular size={18} />,
+		items: custom.map(customItem),
+		addable: true,
+	});
 	sections.push({
 		id: "dsh",
 		title: t.pickerDsh,
@@ -201,16 +271,26 @@ function browseSections(
  * 検索したときの1つのまとまり
  *
  * @param query - 検索欄の値
+ * @param custom - 利用者が追加した画像
  * @param t - 文言
  * @returns 当たったアイコン 貼り付けた絵文字は先頭へ置く
  */
-function searchSection(query: string, t: Messages): PickerSection {
+function searchSection(
+	query: string,
+	custom: readonly CustomIcon[],
+	t: Messages,
+): PickerSection {
 	const ja = t.lang === "ja";
 	const normalized = normalizeQuery(query);
 	const items: PickerItem[] = [];
 	const typed = typedEmoji(query);
 	if (typed !== undefined) {
-		items.push({ value: typed, label: labelOf(typed, ja) });
+		items.push({ value: typed, label: labelOf(typed, ja, custom) });
+	}
+	for (const icon of custom) {
+		if (matchesQuery(normalizeQuery(icon.name), normalized)) {
+			items.push(customItem(icon));
+		}
 	}
 	for (const icon of DSH_ICONS) {
 		if (matchesQuery(icon.keywords, normalized)) {
@@ -241,25 +321,72 @@ export function IconPicker({
 	value,
 	onConfirm,
 	onClose,
+	onAddCustom,
+	onRemoveCustom,
+	newId,
 	t,
 }: {
 	title: string;
 	value: string;
 	onConfirm: (icon: string) => void;
 	onClose: () => void;
+	onAddCustom: (icons: readonly CustomIcon[]) => void;
+	onRemoveCustom: (id: string) => void;
+	newId: () => string;
 	t: Messages;
 }) {
+	const custom = useContext(CustomIconsContext);
+	const fileInput = useRef<HTMLInputElement>(null);
+	const [dragging, setDragging] = useState(false);
+	const [notice, setNotice] = useState<string | null>(null);
 	const [query, setQuery] = useState("");
 	const [hovered, setHovered] = useState<PickerItem | null>(null);
 	const [active, setActive] = useState<string | null>(null);
 	const [recent] = useState(readRecent);
 	const scroller = useRef<HTMLDivElement>(null);
 	const searching = query.trim() !== "";
-	const browse = useMemo(() => browseSections(recent, t), [recent, t]);
-	const sections = useMemo(
-		() => (searching ? [searchSection(query, t)] : browse),
-		[searching, query, t, browse],
+	const browse = useMemo(
+		() => browseSections(recent, custom, t),
+		[recent, custom, t],
 	);
+	const sections = useMemo(
+		() => (searching ? [searchSection(query, custom, t)] : browse),
+		[searching, query, custom, t, browse],
+	);
+	const importFiles = async (files: readonly File[]) => {
+		const images = files.filter((file) => file.type.startsWith("image/"));
+		if (images.length === 0) {
+			return;
+		}
+		const added: CustomIcon[] = [];
+		for (const file of images) {
+			const icon = await customIconFromFile(file, newId());
+			if (icon !== undefined) {
+				added.push(icon);
+			}
+		}
+		setNotice(added.length < images.length ? t.pickerImageFailed : null);
+		if (added.length === 0) {
+			return;
+		}
+		onAddCustom(added);
+		setQuery("");
+		requestAnimationFrame(() => {
+			jump("custom");
+		});
+	};
+	const onDrop = (event: DragEvent) => {
+		event.preventDefault();
+		setDragging(false);
+		void importFiles(Array.from(event.dataTransfer.files));
+	};
+	const onPaste = (event: ClipboardEvent) => {
+		const files = Array.from(event.clipboardData.files);
+		if (files.some((file) => file.type.startsWith("image/"))) {
+			event.preventDefault();
+			void importFiles(files);
+		}
+	};
 	const ja = t.lang === "ja";
 	const pick = (icon: string) => {
 		rememberRecent(icon);
@@ -292,7 +419,8 @@ export function IconPicker({
 	};
 	const first = sections[0]?.items[0];
 	const preview =
-		hovered ?? (value === "" ? null : { value, label: labelOf(value, ja) });
+		hovered ??
+		(value === "" ? null : { value, label: labelOf(value, ja, custom) });
 	return (
 		<Modal
 			open
@@ -301,7 +429,38 @@ export function IconPicker({
 			closeLabel={t.close}
 			className="dwf-pickerModal"
 		>
-			<div className="dwf-picker">
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: 画像のドロップと貼り付けを受けるだけで 操作は中の部品が持つ */}
+			<div
+				className={dragging ? "dwf-picker dwf-pickerDragging" : "dwf-picker"}
+				onPaste={onPaste}
+				onDragOver={(event) => {
+					if (event.dataTransfer.types.includes("Files")) {
+						event.preventDefault();
+						setDragging(true);
+					}
+				}}
+				onDragLeave={(event) => {
+					if (
+						!(event.relatedTarget instanceof Node) ||
+						!event.currentTarget.contains(event.relatedTarget)
+					) {
+						setDragging(false);
+					}
+				}}
+				onDrop={onDrop}
+			>
+				<input
+					ref={fileInput}
+					type="file"
+					accept="image/*"
+					multiple
+					hidden
+					onChange={(event) => {
+						const files = Array.from(event.target.files ?? []);
+						event.target.value = "";
+						void importFiles(files);
+					}}
+				/>
 				<Input
 					data-modal-autofocus
 					icon={<IconSearchOutlineRegular size={16} />}
@@ -353,29 +512,61 @@ export function IconPicker({
 								<h3 className="dwf-pickerHead">{section.title}</h3>
 								<div className="dwf-pickerGrid">
 									{section.items.map((item) => (
+										<span key={item.value} className="dwf-pickerCell">
+											<button
+												type="button"
+												className="dwf-pickerItem"
+												aria-label={item.label}
+												aria-pressed={item.value === value}
+												onMouseEnter={() => {
+													setHovered(item);
+												}}
+												onMouseLeave={() => {
+													setHovered(null);
+												}}
+												onFocus={() => {
+													setHovered(item);
+												}}
+												onClick={() => {
+													pick(item.value);
+												}}
+											>
+												<IconGlyph value={item.value} size={20} />
+											</button>
+											{item.customId !== undefined && (
+												<button
+													type="button"
+													className="dwf-pickerRemove"
+													aria-label={t.pickerRemove(item.label)}
+													title={t.pickerRemove(item.label)}
+													onClick={() => {
+														if (item.customId !== undefined) {
+															onRemoveCustom(item.customId);
+														}
+													}}
+												>
+													<IconCloseOutlineRegular size={10} />
+												</button>
+											)}
+										</span>
+									))}
+									{section.addable === true && (
 										<button
-											key={item.value}
 											type="button"
-											className="dwf-pickerItem"
-											aria-label={item.label}
-											aria-pressed={item.value === value}
-											onMouseEnter={() => {
-												setHovered(item);
-											}}
-											onMouseLeave={() => {
-												setHovered(null);
-											}}
-											onFocus={() => {
-												setHovered(item);
-											}}
+											className="dwf-pickerItem dwf-pickerAdd"
+											aria-label={t.pickerAddImage}
+											title={t.pickerAddImage}
 											onClick={() => {
-												pick(item.value);
+												fileInput.current?.click();
 											}}
 										>
-											<IconGlyph value={item.value} size={20} />
+											<IconPlusOutlineRegular size={18} />
 										</button>
-									))}
+									)}
 								</div>
+								{section.addable === true && section.items.length === 0 && (
+									<p className="dwf-pickerCustomHint">{t.pickerCustomHint}</p>
+								)}
 							</section>
 						))}
 						{sections.every((section) => section.items.length === 0) && (
@@ -388,7 +579,7 @@ export function IconPicker({
 						{preview !== null && <IconGlyph value={preview.value} size={24} />}
 					</span>
 					<span className="dwf-pickerName">
-						{preview?.label ?? t.pickerHint}
+						{notice ?? preview?.label ?? t.pickerHint}
 					</span>
 					<Button
 						variant="outline"
@@ -401,6 +592,7 @@ export function IconPicker({
 						{t.resetIcon}
 					</Button>
 				</div>
+				{dragging && <div className="dwf-pickerDrop">{t.pickerDropHere}</div>}
 			</div>
 		</Modal>
 	);

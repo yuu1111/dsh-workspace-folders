@@ -12,6 +12,7 @@ Loader に行を1つ持たせ クライアントの走査に `./client` を見�
 `src/i18n.ts` は日本語と英語の文言を持ち `<html lang>` で選ぶ
 `src/icon-catalog.ts` はアイコンの値と絵文字の表と検索の純粋な関数を持つ
 `src/icons.tsx` は選べる DSH 純正のアイコンと 保存した値を描く `IconGlyph` を持つ
+`src/custom-icon.ts` は利用者が追加した画像を 64px の PNG へ縮めてアイコンにする
 `src/icon-picker.tsx` は Discord に倣ったアイコンのピッカーを持つ 絵文字の表は `build.ts` が emojibase-data から作り `virtual:emoji-catalog` としてバンドルへ埋める
 `build.ts` は Bun のバンドラで `lib/` を出力し ブラウザ側を `window.__ModuleLoader__.load({ id, factory })` のローダー形式へ包む
 `lib/` は生成物で git の管理外にあり 公開 tarball へは `prepack` が組み込む

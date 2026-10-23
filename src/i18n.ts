@@ -35,6 +35,12 @@ export interface Messages {
 	pickerResults: string;
 	pickerEmpty: string;
 	pickerHint: string;
+	pickerCustom: string;
+	pickerAddImage: string;
+	pickerCustomHint: string;
+	pickerDropHere: string;
+	pickerImageFailed: string;
+	pickerRemove: (name: string) => string;
 	emojiGroups: Record<number, string>;
 	resetIcon: string;
 	cancel: string;
@@ -77,6 +83,13 @@ const JA: Messages = {
 	pickerResults: "検索結果",
 	pickerEmpty: "見つかりませんでした",
 	pickerHint: "アイコンを選んでください",
+	pickerCustom: "カスタム",
+	pickerAddImage: "画像を追加",
+	pickerCustomHint:
+		"ロゴなどの画像を追加できます ここへドロップするか 貼り付けても追加できます",
+	pickerDropHere: "ドロップして画像を追加",
+	pickerImageFailed: "読み込めない画像がありました（画像で 5MB まで）",
+	pickerRemove: (name) => `「${name}」を削除`,
 	emojiGroups: {
 		0: "スマイリーと感情",
 		1: "人と体",
@@ -129,6 +142,13 @@ const EN: Messages = {
 	pickerResults: "Search results",
 	pickerEmpty: "No matches",
 	pickerHint: "Pick an icon",
+	pickerCustom: "Custom",
+	pickerAddImage: "Add image",
+	pickerCustomHint:
+		"Add your own images, such as logos. You can also drop or paste them here.",
+	pickerDropHere: "Drop to add images",
+	pickerImageFailed: "Some files could not be read (images up to 5 MB)",
+	pickerRemove: (name) => `Remove ${name}`,
 	emojiGroups: {
 		0: "Smileys & Emotion",
 		1: "People & Body",

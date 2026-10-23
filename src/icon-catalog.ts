@@ -159,3 +159,53 @@ export function pushRecent(
 ): string[] {
 	return [value, ...recent.filter((entry) => entry !== value)].slice(0, max);
 }
+
+/**
+ * 画像が透過した背景の上の単色の形か
+ *
+ * 黒一色のロゴは暗いテーマで見えなくなるため 形だけを使って文字色で塗る
+ * 判断に使う 色の幅は見える画素の各チャンネルの最大と最小の差で測る
+ *
+ * @param pixels - RGBA の画素の並び
+ * @returns 単色の形なら true
+ */
+export function isMonochrome(pixels: ArrayLike<number>): boolean {
+	let visible = 0;
+	let transparent = 0;
+	const min = [255, 255, 255];
+	const max = [0, 0, 0];
+	for (let index = 0; index + 3 < pixels.length; index += 4) {
+		const alpha = pixels[index + 3] ?? 0;
+		if (alpha < 32) {
+			transparent++;
+			continue;
+		}
+		if (alpha < 160) {
+			continue;
+		}
+		visible++;
+		for (let channel = 0; channel < 3; channel++) {
+			const value = pixels[index + channel] ?? 0;
+			min[channel] = Math.min(min[channel] ?? 255, value);
+			max[channel] = Math.max(max[channel] ?? 0, value);
+		}
+	}
+	const total = pixels.length / 4;
+	if (visible === 0 || transparent < total * 0.1) {
+		return false;
+	}
+	return [0, 1, 2].every(
+		(channel) => (max[channel] ?? 0) - (min[channel] ?? 0) <= 48,
+	);
+}
+
+/**
+ * ファイル名から拡張子を除いた名前
+ *
+ * @param fileName - ファイル名
+ * @returns アイコンの名前 空なら "image"
+ */
+export function iconNameFromFile(fileName: string): string {
+	const name = fileName.replace(/\.[^.]+$/, "").trim();
+	return name === "" ? "image" : name.slice(0, 40);
+}
