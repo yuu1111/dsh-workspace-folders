@@ -51,6 +51,12 @@ export interface FolderState {
 	 * 「未分類」を折りたたんでいるか
 	 */
 	unassignedCollapsed?: boolean;
+	/**
+	 * ワークスペース id から 純正のフォルダアイコンの代わりに出す絵文字への対応
+	 *
+	 * 後から足した任意の項目なので 版は上げない
+	 */
+	icons?: Record<string, string>;
 }
 
 /**
@@ -154,6 +160,25 @@ function parseAssignments(
 }
 
 /**
+ * 保存されたワークスペースのアイコンを読む
+ *
+ * @param value - 保存された値
+ * @returns 読めたアイコン 1つも無ければ undefined
+ */
+function parseIcons(value: unknown): Record<string, string> | undefined {
+	if (!isRecord(value)) {
+		return undefined;
+	}
+	const icons: Record<string, string> = {};
+	for (const [workspaceId, icon] of Object.entries(value)) {
+		if (workspaceId !== "" && typeof icon === "string" && icon !== "") {
+			icons[workspaceId] = icon;
+		}
+	}
+	return Object.keys(icons).length === 0 ? undefined : icons;
+}
+
+/**
  * 親の鎖が輪になっていたら そのフォルダを最上位へ戻す
  *
  * 手で書き換えた保存値でも描画が止まらないようにする
@@ -212,6 +237,10 @@ export function parseState(raw: string | null): FolderState {
 	};
 	if (value.unassignedCollapsed === true) {
 		state.unassignedCollapsed = true;
+	}
+	const icons = parseIcons(value.icons);
+	if (icons !== undefined) {
+		state.icons = icons;
 	}
 	return state;
 }
@@ -299,6 +328,25 @@ export function setFolderIcon(
 		const { icon: _old, ...rest } = folder;
 		return icon === "" ? rest : { ...rest, icon };
 	});
+}
+
+/**
+ * ワークスペースのアイコンを変える
+ *
+ * @param state - 今の状態
+ * @param workspaceId - 対象のワークスペース
+ * @param icon - 絵文字 空文字なら純正のアイコンへ戻す
+ * @returns 新しい状態
+ */
+export function setWorkspaceIcon(
+	state: FolderState,
+	workspaceId: string,
+	icon: string,
+): FolderState {
+	const { icons: current, ...rest } = state;
+	const { [workspaceId]: _old, ...others } = current ?? {};
+	const icons = icon === "" ? others : { ...others, [workspaceId]: icon };
+	return Object.keys(icons).length === 0 ? rest : { ...rest, icons };
 }
 
 /**
@@ -433,21 +481,34 @@ export function assignWorkspace(
 }
 
 /**
- * 今は存在しないワークスペースの割り当てを捨てる
+ * 今は存在しないワークスペースの割り当てとアイコンを捨てる
  *
  * @param state - 今の状態
  * @param workspaceIds - 存在するワークスペース
  * @returns 新しい状態 捨てるものが無ければ元の状態
  */
-export function pruneAssignments(
+export function pruneWorkspaces(
 	state: FolderState,
 	workspaceIds: ReadonlySet<string>,
 ): FolderState {
 	const entries = Object.entries(state.assignments);
 	const kept = entries.filter(([workspaceId]) => workspaceIds.has(workspaceId));
-	return kept.length === entries.length
-		? state
-		: { ...state, assignments: Object.fromEntries(kept) };
+	const iconEntries = Object.entries(state.icons ?? {});
+	const keptIcons = iconEntries.filter(([workspaceId]) =>
+		workspaceIds.has(workspaceId),
+	);
+	if (
+		kept.length === entries.length &&
+		keptIcons.length === iconEntries.length
+	) {
+		return state;
+	}
+	const { icons: _old, ...rest } = state;
+	const next: FolderState = { ...rest, assignments: Object.fromEntries(kept) };
+	if (keptIcons.length > 0) {
+		next.icons = Object.fromEntries(keptIcons);
+	}
+	return next;
 }
 
 /**

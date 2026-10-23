@@ -26,6 +26,7 @@ import {
 	Input,
 	Menu,
 	type MenuEntry,
+	MenuItemButton,
 	Modal,
 	Tooltip,
 } from "@deepseek-ai/dsh-client-ui-primitives";
@@ -45,6 +46,7 @@ import { createPortal } from "react-dom";
 import { type Messages, messagesFor } from "./i18n";
 import {
 	guideBackground,
+	iconCss,
 	layoutCss,
 	quote,
 	ROW_KEY_PREFIX,
@@ -67,9 +69,10 @@ import {
 	moveFolder,
 	parseState,
 	placeFolder,
-	pruneAssignments,
+	pruneWorkspaces,
 	renameFolder,
 	setFolderIcon,
+	setWorkspaceIcon,
 	shiftFolder,
 	toggleCollapsed,
 	UNASSIGNED_ID,
@@ -179,6 +182,11 @@ const STYLE_TAG_ID = "dsh-workspace-folders/style.css";
 const LAYOUT_TAG_ID = "dsh-workspace-folders/layout.css";
 
 /**
+ * ワークスペースのアイコンを差し替えるスタイルタグの識別子
+ */
+const ICON_TAG_ID = "dsh-workspace-folders/icons.css";
+
+/**
  * このプラグインが待つサービス
  */
 export const inject = ["slots"];
@@ -212,6 +220,7 @@ type Dialog =
 	| { kind: "create"; parentId?: string; assign?: string }
 	| { kind: "rename"; folder: Folder }
 	| { kind: "icon"; folder: Folder }
+	| { kind: "workspaceIcon"; workspaceId: string; title: string }
 	| { kind: "delete"; folder: Folder };
 
 /**
@@ -846,26 +855,28 @@ function NameDialog({
 /**
  * アイコンを選ぶダイアログ
  *
- * @param props - 対象のフォルダと確定時の処理
+ * @param props - 見出し 初期値 確定時の処理
  * @returns ダイアログ
  */
 function IconDialog({
-	folder,
+	title,
+	initial,
 	onConfirm,
 	onClose,
 	t,
 }: {
-	folder: Folder;
+	title: string;
+	initial: string;
 	onConfirm: (icon: string) => void;
 	onClose: () => void;
 	t: Messages;
 }) {
-	const [draft, setDraft] = useState(folder.icon ?? "");
+	const [draft, setDraft] = useState(initial);
 	return (
 		<Modal
 			open
 			onClose={onClose}
-			title={t.iconTitle}
+			title={title}
 			closeLabel={t.close}
 			footer={
 				<>
@@ -976,12 +987,28 @@ function DialogView({
 		case "icon":
 			return (
 				<IconDialog
-					folder={dialog.folder}
+					title={t.iconTitle}
+					initial={dialog.folder.icon ?? ""}
 					onClose={onClose}
 					t={t}
 					onConfirm={(icon) => {
 						store.update((state) =>
 							setFolderIcon(state, dialog.folder.id, icon),
+						);
+						onClose();
+					}}
+				/>
+			);
+		case "workspaceIcon":
+			return (
+				<IconDialog
+					title={t.workspaceIconTitle(dialog.title)}
+					initial={store.getSnapshot().icons?.[dialog.workspaceId] ?? ""}
+					onClose={onClose}
+					t={t}
+					onConfirm={(icon) => {
+						store.update((state) =>
+							setWorkspaceIcon(state, dialog.workspaceId, icon),
 						);
 						onClose();
 					}}
@@ -1022,6 +1049,90 @@ function DialogView({
 				</Modal>
 			);
 	}
+}
+
+/**
+ * 純正のワークスペース行の「…」メニューの今の姿
+ */
+interface WorkspaceMenu {
+	/**
+	 * メニューを開いているワークスペース
+	 */
+	workspaceId: string;
+	/**
+	 * 行を足す先 純正のメニューの項目が並ぶ要素
+	 */
+	viewport: HTMLElement;
+}
+
+/**
+ * 純正のワークスペース行の「…」メニューが開いているかを追う
+ *
+ * 純正のメニューは項目を外から足す口を持たないため 開いている間に行へ付く
+ * `_menuOpen` と body 直下へ描かれるメニューを見つけ 項目の並ぶ要素を返す
+ *
+ * @param tree - 純正の一覧の木
+ * @returns 開いているメニュー 無ければ null
+ */
+function useWorkspaceMenu(tree: HTMLElement | null): WorkspaceMenu | null {
+	const [menu, setMenu] = useState<WorkspaceMenu | null>(null);
+	useEffect(() => {
+		if (tree === null) {
+			setMenu(null);
+			return;
+		}
+		let frame = 0;
+		const scan = () => {
+			frame = 0;
+			const row = tree.querySelector(
+				`[data-row-key^=${quote(ROW_KEY_PREFIX)}][class*="_menuOpen"]`,
+			);
+			const key = row?.getAttribute("data-row-key") ?? "";
+			const menus = document.body.querySelectorAll<HTMLElement>(
+				':scope > [role="menu"][data-menu-material] > [role="presentation"]',
+			);
+			const viewport = menus[menus.length - 1];
+			const next =
+				key.length > ROW_KEY_PREFIX.length && viewport !== undefined
+					? { workspaceId: key.slice(ROW_KEY_PREFIX.length), viewport }
+					: null;
+			setMenu((current) =>
+				current?.workspaceId === next?.workspaceId &&
+				current?.viewport === next?.viewport
+					? current
+					: next,
+			);
+		};
+		const schedule = () => {
+			if (frame === 0) {
+				frame = requestAnimationFrame(scan);
+			}
+		};
+		scan();
+		const observer = new MutationObserver(schedule);
+		observer.observe(document.body, { childList: true });
+		observer.observe(tree, {
+			subtree: true,
+			attributes: true,
+			attributeFilter: ["class"],
+		});
+		return () => {
+			observer.disconnect();
+			cancelAnimationFrame(frame);
+		};
+	}, [tree]);
+	return menu;
+}
+
+/**
+ * 純正の「…」メニューを閉じる
+ *
+ * 純正のメニューは外側の pointerdown で閉じるため 同じ合図を body へ送る
+ */
+function closeShippedMenu(): void {
+	document.body.dispatchEvent(
+		new PointerEvent("pointerdown", { bubbles: true }),
+	);
 }
 
 /**
@@ -1081,6 +1192,9 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 		motion.attach(tree);
 		return () => motion.attach(null);
 	}, [motion, tree]);
+
+	const icons = useMemo(() => iconCss(state.icons), [state.icons]);
+	useLayoutEffect(() => installStyle(ICON_TAG_ID, icons), [icons]);
 
 	useLayoutEffect(() => {
 		const style = installStyle(LAYOUT_TAG_ID, css);
@@ -1178,12 +1292,14 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 		};
 	});
 
+	const workspaceMenu = useWorkspaceMenu(tree);
+
 	useEffect(() => {
 		if (!ready) {
 			return;
 		}
 		const ids = new Set(workspaces.map((workspace) => workspace.workspaceId));
-		store.update((current) => pruneAssignments(current, ids));
+		store.update((current) => pruneWorkspaces(current, ids));
 	}, [ready, workspaces]);
 
 	const knownWorkspace = (id: string) =>
@@ -1289,6 +1405,28 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 					</Tooltip>,
 					header,
 				)}
+			{workspaceMenu !== null &&
+				createPortal(
+					<MenuItemButton
+						separatorBefore
+						icon={<IconEditOutlineRegular />}
+						onSelect={() => {
+							const { workspaceId } = workspaceMenu;
+							closeShippedMenu();
+							setDialog({
+								kind: "workspaceIcon",
+								workspaceId,
+								title:
+									workspaces.find(
+										(workspace) => workspace.workspaceId === workspaceId,
+									)?.title ?? workspaceId,
+							});
+						}}
+					>
+						{t.changeIcon}
+					</MenuItemButton>,
+					workspaceMenu.viewport,
+				)}
 			<DialogView
 				dialog={dialog}
 				t={t}
@@ -1313,6 +1451,7 @@ export function apply(ctx: Context): void {
 	ctx.effect(
 		() => () => {
 			document.getElementById(LAYOUT_TAG_ID)?.remove();
+			document.getElementById(ICON_TAG_ID)?.remove();
 		},
 		"workspace-folders: layout cleanup",
 	);

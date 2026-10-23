@@ -81,6 +81,27 @@ const GUIDE_LINE =
 const GUIDE_OFFSET_PX = 15;
 
 /**
+ * 純正のワークスペース行のフォルダアイコンを絵文字へ差し替える CSS
+ *
+ * 純正の行へは書き込まず 行の中のアイコンの枠で svg を隠し 疑似要素で絵文字を出す
+ * フォルダが無くても効かせるため 並びの CSS とは別に作る
+ *
+ * @param icons - ワークスペース id から絵文字への対応
+ * @returns スタイルシートの本文 アイコンが無ければ空文字
+ */
+export function iconCss(icons: Readonly<Record<string, string>> = {}): string {
+	const rules: string[] = [];
+	for (const [workspaceId, icon] of Object.entries(icons)) {
+		const slot = `${SLOT_SELECTOR} [data-row-key=${quote(ROW_KEY_PREFIX + workspaceId)}] > [class*="_folder"]`;
+		rules.push(
+			`${slot} > svg{display:none}`,
+			`${slot}::before{content:${quote(icon.replace(/[\r\n]/g, ""))};font-size:14px;line-height:1}`,
+		);
+	}
+	return rules.join("\n");
+}
+
+/**
  * 並びの全体から CSS を作る
  *
  * @param layout - 並びの全体

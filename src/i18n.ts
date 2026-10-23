@@ -24,6 +24,7 @@ export interface Messages {
 	createTitle: string;
 	renameTitle: string;
 	iconTitle: string;
+	workspaceIconTitle: (name: string) => string;
 	deleteTitle: string;
 	deleteBody: (name: string) => string;
 	namePlaceholder: string;
@@ -57,6 +58,7 @@ const JA: Messages = {
 	createTitle: "新しいフォルダ",
 	renameTitle: "フォルダの名前を変更",
 	iconTitle: "フォルダのアイコン",
+	workspaceIconTitle: (name) => `「${name}」のアイコン`,
 	deleteTitle: "フォルダを削除",
 	deleteBody: (name) =>
 		`「${name}」を削除します 中のワークスペースとサブフォルダは1つ上の階層へ移ります`,
@@ -91,6 +93,7 @@ const EN: Messages = {
 	createTitle: "New folder",
 	renameTitle: "Rename folder",
 	iconTitle: "Folder icon",
+	workspaceIconTitle: (name) => `Icon for ${name}`,
 	deleteTitle: "Delete folder",
 	deleteBody: (name) =>
 		`Delete "${name}"? Its workspaces and subfolders move up one level.`,

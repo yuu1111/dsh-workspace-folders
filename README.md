@@ -3,7 +3,7 @@
 English | [日本語](README.ja.md)
 
 A DeepSeek Harness Web GUI plugin that groups sidebar workspaces into folders.
-Folders nest and can carry an emoji icon.
+Folders nest and can carry an emoji icon, and so can each workspace.
 
 ```
 ▾ 🛠️ DSH plugins
@@ -42,6 +42,7 @@ own bundle patch, so the profile's `cordis.patch.yml` needs no edit. Restart
 | Reorder folders | Drag a folder row onto the top or bottom edge of another, or "..." → Move up / Move down |
 | Nest a folder | Drag a folder row onto the middle of another, or "..." → Move to |
 | Change the icon | Folder "..." → Change icon |
+| Change a workspace's icon | Workspace "..." → Change icon |
 | Collapse / expand | Click the folder row; a collapsed folder shows how many workspaces it holds |
 
 Deleting a folder moves its workspaces and subfolders up one level. Workspaces
@@ -51,7 +52,7 @@ While no folder exists, the plugin leaves the shipped list untouched.
 
 ## Storage
 
-Folders and assignments live in the browser's `localStorage`
+Folders, assignments, and workspace icons live in the browser's `localStorage`
 (`dsh-workspace-folders.state.v1`). They are per browser and never change
 DSH's workspace registry or its order.
 

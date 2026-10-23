@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { guideBackground, layoutCss, quote } from "../src/layout-css";
+import { guideBackground, iconCss, layoutCss, quote } from "../src/layout-css";
 import {
 	assignWorkspace,
 	computeLayout,
@@ -51,6 +51,15 @@ describe("layoutCss", () => {
 		const two = guideBackground(2);
 		expect(two).toContain("background-position:15px 0,51px 0");
 		expect(two.match(/linear-gradient/g)).toHaveLength(2);
+	});
+
+	test("ワークスペース行のアイコンの枠だけを絵文字へ差し替える", () => {
+		expect(iconCss()).toBe("");
+		const css = iconCss({ a: "🐋" });
+		expect(css).toContain(
+			'[data-slot="sidebar.workspaces"] [data-row-key="workspace:a"] > [class*="_folder"] > svg{display:none}',
+		);
+		expect(css).toContain('::before{content:"🐋"');
 	});
 
 	test("属性値の引用符と円記号を逃がす", () => {

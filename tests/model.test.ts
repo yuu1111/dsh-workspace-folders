@@ -15,8 +15,9 @@ import {
 	moveFolder,
 	parseState,
 	placeFolder,
-	pruneAssignments,
+	pruneWorkspaces,
 	setFolderIcon,
+	setWorkspaceIcon,
 	shiftFolder,
 	toggleCollapsed,
 	UNASSIGNED_ID,
@@ -142,11 +143,31 @@ describe("フォルダの操作", () => {
 		).toBeUndefined();
 	});
 
+	test("ワークスペースのアイコンは空文字で純正へ戻り 項目ごと消える", () => {
+		const state = setWorkspaceIcon(sample(), "w-dsh", "🐋");
+		expect(state.icons).toEqual({ "w-dsh": "🐋" });
+		expect(parseState(JSON.stringify(state)).icons).toEqual({ "w-dsh": "🐋" });
+		expect("icons" in setWorkspaceIcon(state, "w-dsh", "")).toBe(false);
+	});
+
+	test("無くなったワークスペースのアイコンも捨てる", () => {
+		const state = setWorkspaceIcon(
+			setWorkspaceIcon(sample(), "w-dsh", "🐋"),
+			"w-gone",
+			"🔥",
+		);
+		const pruned = pruneWorkspaces(
+			state,
+			new Set(["w-dsh", "w-work", "w-game"]),
+		);
+		expect(pruned.icons).toEqual({ "w-dsh": "🐋" });
+	});
+
 	test("無くなったワークスペースの割り当てを捨てる", () => {
 		const state = sample();
-		const pruned = pruneAssignments(state, new Set(["w-dsh"]));
+		const pruned = pruneWorkspaces(state, new Set(["w-dsh"]));
 		expect(Object.keys(pruned.assignments)).toEqual(["w-dsh"]);
-		expect(pruneAssignments(pruned, new Set(["w-dsh"]))).toBe(pruned);
+		expect(pruneWorkspaces(pruned, new Set(["w-dsh"]))).toBe(pruned);
 	});
 });
 
