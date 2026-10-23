@@ -1,0 +1,1175 @@
+/**
+ * ブラウザ側の本体
+ *
+ * 純正のワークスペース一覧は置き換えない 一覧の木（role="tree"）へフォルダの
+ * 見出し行を React ポータルで差し込み 純正のワークスペース群の並びと字下げと
+ * 表示を生成した CSS で決める そのためセッション行のメニュー ステータス 検索
+ * 表示オプションは純正のまま動く
+ *
+ * 純正の要素へは属性も書き込まない 並びは `:has()` と純正が行へ付ける
+ * `data-row-key` だけで選ぶ
+ */
+
+import type { Context } from "@deepseek-ai/cordis";
+import type {} from "@deepseek-ai/dsh-client-ui-layout/client";
+import {
+	Button,
+	IconChevronDownOutlineRegular,
+	IconChevronUpOutlineRegular,
+	IconEditOutlineRegular,
+	IconEllipsisOutlineRegular,
+	IconFolderCloseRegular,
+	IconFolderOpenRegular,
+	IconPlusOutlineRegular,
+	IconTrashOutlineRegular,
+	IconTriangleRightFillRegular,
+	Input,
+	Menu,
+	type MenuEntry,
+	Modal,
+	Tooltip,
+} from "@deepseek-ai/dsh-client-ui-primitives";
+import type {} from "@deepseek-ai/dsh-client-ui-renderer/client";
+import {
+	type CSSProperties,
+	type DragEvent,
+	type ReactNode,
+	useEffect,
+	useMemo,
+	useState,
+	useSyncExternalStore,
+} from "react";
+import { createPortal } from "react-dom";
+import { type Messages, messagesFor } from "./i18n";
+import {
+	guideBackground,
+	layoutCss,
+	quote,
+	ROW_KEY_PREFIX,
+	SLOT_SELECTOR,
+} from "./layout-css";
+import {
+	assignWorkspace,
+	childFolders,
+	computeLayout,
+	createFolder,
+	type DropPosition,
+	deleteFolder,
+	descendantIds,
+	EMPTY_STATE,
+	type Folder,
+	type FolderState,
+	folderPath,
+	type HeadingRow,
+	INDENT_PX,
+	moveFolder,
+	parseState,
+	placeFolder,
+	pruneAssignments,
+	renameFolder,
+	setFolderIcon,
+	shiftFolder,
+	toggleCollapsed,
+	UNASSIGNED_ID,
+} from "./model";
+
+/**
+ * 常駐させる枠
+ *
+ * 画面全体の浮き層 何も描かず 見出し行はポータルでサイドバーへ出す
+ */
+const OVERLAY = "shell.overlay";
+
+/**
+ * 登録 id
+ */
+const ENTRY_ID = "workspace-folders";
+
+/**
+ * 状態を保存する localStorage のキー
+ */
+const STORAGE_KEY = "dsh-workspace-folders.state.v1";
+
+/**
+ * フォルダ行をドラッグするときの型
+ */
+const FOLDER_DRAG_TYPE = "application/x-dsh-workspace-folder";
+
+/**
+ * アイコンの候補
+ */
+const ICON_PRESETS = [
+	"📁",
+	"🗂️",
+	"💼",
+	"🏠",
+	"🧪",
+	"🛠️",
+	"⚙️",
+	"🎮",
+	"📚",
+	"📝",
+	"🌐",
+	"☁️",
+	"🔒",
+	"🤖",
+	"🐋",
+	"🚀",
+	"⭐",
+	"🔥",
+	"🎨",
+	"🎵",
+	"📦",
+	"🧩",
+	"💡",
+	"🔬",
+];
+
+/**
+ * 見出し行と 純正の一覧へ足すボタンの見た目
+ *
+ * 純正の CSS Modules は外から読めないため 0.2.1 の純正のワークスペース行と
+ * 同じトークンと同じ宣言を自前の class で持つ
+ */
+const STYLE = `
+.dwf-row{box-sizing:border-box;flex:none;height:34px;margin-top:4px;border-radius:var(--dsw-radius-md);padding:0 8px;padding-inline-start:calc(8px + var(--dwf-indent,0px));cursor:pointer;user-select:none;color:var(--dsw-alias-label-secondary);display:flex;align-items:center;gap:6px}
+.dwf-row:first-child{margin-top:0}
+.dwf-row:hover,.dwf-row.dwf-menuOpen{background:var(--dsw-alias-interactive-bg-hover)}
+.dwf-row{position:relative}
+.dwf-row.dwf-drop-inside{background:var(--dsw-alias-interactive-bg-hover);box-shadow:inset 0 0 0 1px var(--dsw-alias-state-business-primary)}
+.dwf-row.dwf-drop-before:before,.dwf-row.dwf-drop-after:after{content:"";position:absolute;left:calc(8px + var(--dwf-indent,0px));right:4px;height:2px;border-radius:1px;background:var(--dsw-alias-state-business-primary);pointer-events:none}
+.dwf-row.dwf-drop-before:before{top:-3px}
+.dwf-row.dwf-drop-after:after{bottom:-3px}
+.dwf-slot{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;display:inline-flex;align-items:center;justify-content:center}
+.dwf-arrow{transition:transform .15s var(--ds-ease-in-out)}
+.dwf-arrowOpen{transform:rotate(90deg)}
+.dwf-emoji{font-size:14px;line-height:1}
+.dwf-title{flex:1;min-width:0;font-size:13px;font-weight:600;line-height:20px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.dwf-count{flex:none;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+.dwf-row:hover .dwf-count,.dwf-row.dwf-menuOpen .dwf-count{display:none}
+.dwf-actions{flex:none;height:20px;align-items:center;gap:15px;display:none}
+.dwf-row:hover .dwf-actions,.dwf-row.dwf-menuOpen .dwf-actions{display:inline-flex}
+.dwf-iconButton{border-radius:var(--dsw-radius-xs);cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}
+.dwf-iconButton:hover{color:var(--dsw-alias-label-primary)}
+.dwf-headerButton{border-radius:var(--dsw-radius-sm);cursor:pointer;width:28px;height:28px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}
+.dwf-headerButton:hover{background:var(--dsw-alias-interactive-bg-hover)}
+:has(input[tabindex="0"]) > .dwf-headerButton{display:none}
+.dwf-iconGrid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:12px}
+.dwf-iconChoice{height:32px;border-radius:var(--dsw-radius-sm);border:none;background:0 0;cursor:pointer;font-size:18px;line-height:1}
+.dwf-iconChoice:hover,.dwf-iconChoice[aria-pressed=true]{background:var(--dsw-alias-interactive-bg-hover)}
+.dwf-modalBody{display:flex;flex-direction:column;gap:8px}
+.dwf-modalText{color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;margin:0}
+.dwf-modalAction{min-width:72px}
+`;
+
+/**
+ * スタイルタグの識別子
+ */
+const STYLE_TAG_ID = "dsh-workspace-folders/style.css";
+
+/**
+ * 並びを決めるスタイルタグの識別子
+ */
+const LAYOUT_TAG_ID = "dsh-workspace-folders/layout.css";
+
+/**
+ * このプラグインが待つサービス
+ */
+export const inject = ["slots"];
+
+/**
+ * 純正のワークスペース1件の見え方
+ */
+interface WorkspaceRow {
+	workspaceId: string;
+	title: string;
+}
+
+/**
+ * 浮き層の枠が配る props のうち ここで使うもの
+ *
+ * `useWorkspaces` は ui-workspace が根へ配る読み口で 無い構成でも動くよう任意にする
+ */
+interface OverlayProps {
+	useWorkspaces?: <T>(
+		selector: (snapshot: {
+			items: readonly WorkspaceRow[];
+			phase: string;
+		}) => T,
+	) => T;
+}
+
+/**
+ * 開いているダイアログ
+ */
+type Dialog =
+	| { kind: "create"; parentId?: string; assign?: string }
+	| { kind: "rename"; folder: Folder }
+	| { kind: "icon"; folder: Folder }
+	| { kind: "delete"; folder: Folder };
+
+/**
+ * localStorage を背にした状態の置き場
+ *
+ * 別のタブでの変更も `storage` イベントで拾う
+ */
+const store = (() => {
+	let cached: { raw: string | null; state: FolderState } | undefined;
+	const listeners = new Set<() => void>();
+	const read = (): string | null => {
+		try {
+			return globalThis.localStorage?.getItem(STORAGE_KEY) ?? null;
+		} catch {
+			return null;
+		}
+	};
+	const getSnapshot = (): FolderState => {
+		const raw = read();
+		if (cached === undefined || cached.raw !== raw) {
+			cached = { raw, state: parseState(raw) };
+		}
+		return cached.state;
+	};
+	const notify = () => {
+		for (const listener of [...listeners]) {
+			listener();
+		}
+	};
+	return {
+		getSnapshot,
+		getServerSnapshot: (): FolderState => EMPTY_STATE,
+		subscribe(listener: () => void): () => void {
+			listeners.add(listener);
+			const onStorage = (event: StorageEvent) => {
+				if (event.key === STORAGE_KEY) {
+					listener();
+				}
+			};
+			globalThis.addEventListener?.("storage", onStorage);
+			return () => {
+				listeners.delete(listener);
+				globalThis.removeEventListener?.("storage", onStorage);
+			};
+		},
+		update(change: (state: FolderState) => FolderState): void {
+			const current = getSnapshot();
+			const next = change(current);
+			if (next === current) {
+				return;
+			}
+			const raw = JSON.stringify(next);
+			try {
+				globalThis.localStorage?.setItem(STORAGE_KEY, raw);
+			} catch {
+				// 保存できない環境でも このタブの間は変更を保つ
+			}
+			cached = { raw, state: next };
+			notify();
+		},
+	};
+})();
+
+/**
+ * スタイルタグを document へ入れる
+ *
+ * @param id - タグの識別子
+ * @param text - 本文
+ * @returns 取り除く関数
+ */
+function installStyle(id: string, text: string): () => void {
+	const existing = document.getElementById(id);
+	if (existing !== null) {
+		existing.textContent = text;
+		return () => {
+			existing.remove();
+		};
+	}
+	const style = document.createElement("style");
+	style.id = id;
+	style.textContent = text;
+	document.head.append(style);
+	return () => {
+		style.remove();
+	};
+}
+
+/**
+ * 純正の一覧の今の姿
+ */
+interface Surface {
+	/**
+	 * 見出し行を差し込む木 一覧が出ていなければ null
+	 */
+	tree: HTMLElement | null;
+	/**
+	 * 新しいフォルダのボタンを足す見出し 広いサイドバーのときだけ
+	 */
+	header: HTMLElement | null;
+	/**
+	 * 木に並ぶワークスペース群の id 純正の並び順
+	 */
+	sectionIds: readonly string[];
+}
+
+/**
+ * 何も無いときの姿
+ */
+const NO_SURFACE: Surface = { tree: null, header: null, sectionIds: [] };
+
+/**
+ * 木の直下に並ぶワークスペース群の id を読む
+ *
+ * @param tree - 純正の一覧の木
+ * @returns 純正の並び順の id
+ */
+function readSectionIds(tree: HTMLElement): string[] {
+	const ids: string[] = [];
+	for (const child of Array.from(tree.children)) {
+		if (child.classList.contains("dwf-row")) {
+			continue;
+		}
+		const row = child.querySelector(`[data-row-key^=${quote(ROW_KEY_PREFIX)}]`);
+		const key = row?.getAttribute("data-row-key");
+		if (key?.startsWith(ROW_KEY_PREFIX) === true) {
+			ids.push(key.slice(ROW_KEY_PREFIX.length));
+		}
+	}
+	return ids;
+}
+
+/**
+ * 純正の一覧を探して追う
+ *
+ * サイドバーの開閉 検索 表示の切り替えで木は作り直されるため document の
+ * 変化を監視し フレームごとに1回だけ探し直す
+ *
+ * @returns 今の姿
+ */
+function useSurface(): Surface {
+	const [surface, setSurface] = useState<Surface>(NO_SURFACE);
+	useEffect(() => {
+		let frame = 0;
+		const scan = () => {
+			frame = 0;
+			const slot = document.querySelector<HTMLElement>(SLOT_SELECTOR);
+			let tree: HTMLElement | null = null;
+			for (const candidate of Array.from(
+				slot?.querySelectorAll<HTMLElement>('[role="tree"]') ?? [],
+			)) {
+				if (readSectionIds(candidate).length > 0) {
+					tree = candidate;
+					break;
+				}
+			}
+			const headerCandidate = slot?.firstElementChild?.firstElementChild;
+			const header =
+				headerCandidate instanceof HTMLElement &&
+				headerCandidate.querySelector("input") !== null
+					? headerCandidate
+					: null;
+			const sectionIds = tree === null ? [] : readSectionIds(tree);
+			setSurface((current) =>
+				current.tree === tree &&
+				current.header === header &&
+				current.sectionIds.join("\n") === sectionIds.join("\n")
+					? current
+					: { tree, header, sectionIds },
+			);
+		};
+		const schedule = () => {
+			if (frame === 0) {
+				frame = requestAnimationFrame(scan);
+			}
+		};
+		scan();
+		const observer = new MutationObserver(schedule);
+		observer.observe(document.body, { childList: true, subtree: true });
+		return () => {
+			observer.disconnect();
+			cancelAnimationFrame(frame);
+		};
+	}, []);
+	return surface;
+}
+
+/**
+ * DSH の言語設定に合う文言
+ *
+ * @returns 今の言語の文言
+ */
+function useMessages(): Messages {
+	const [lang, setLang] = useState(() => document.documentElement.lang);
+	useEffect(() => {
+		const observer = new MutationObserver(() => {
+			setLang(document.documentElement.lang);
+		});
+		observer.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ["lang"],
+		});
+		return () => {
+			observer.disconnect();
+		};
+	}, []);
+	return useMemo(() => messagesFor(lang), [lang]);
+}
+
+/**
+ * 新しいフォルダの id
+ *
+ * @returns 重ならない id
+ */
+function newId(): string {
+	return (
+		globalThis.crypto?.randomUUID?.() ??
+		`f${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`
+	);
+}
+
+/**
+ * フォルダの先頭のアイコン
+ *
+ * @param props - フォルダと開閉
+ * @returns 絵文字か 純正と同じフォルダのアイコン
+ */
+function FolderIcon({
+	folder,
+	open,
+}: {
+	folder?: Folder | undefined;
+	open: boolean;
+}) {
+	if (folder?.icon !== undefined) {
+		return <span className="dwf-emoji">{folder.icon}</span>;
+	}
+	return open ? <IconFolderOpenRegular /> : <IconFolderCloseRegular />;
+}
+
+/**
+ * 見出し行の案内線を style へ直す
+ *
+ * @param depth - 字下げの段数
+ * @returns style へ渡す値
+ */
+function guideStyle(depth: number): CSSProperties {
+	const style: Record<string, string> = {};
+	for (const declaration of guideBackground(depth).split(";")) {
+		const colon = declaration.indexOf(":");
+		if (colon > 0) {
+			const name = declaration
+				.slice(0, colon)
+				.replace(/-([a-z])/g, (_match: string, letter: string) =>
+					letter.toUpperCase(),
+				);
+			style[name] = declaration.slice(colon + 1);
+		}
+	}
+	return style;
+}
+
+/**
+ * ドラッグ中の指が行のどこにあるか
+ *
+ * フォルダを運んでいるときは 上下の4分の1を前後 真ん中を中とする
+ * ワークスペースを運んでいるときと 未分類の行では常に中とする
+ *
+ * @param event - ドラッグのイベント
+ * @param reorderable - 前後へ置ける行か
+ * @returns 置く位置
+ */
+function dropPosition(event: DragEvent, reorderable: boolean): DropPosition {
+	if (!reorderable || !event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) {
+		return "inside";
+	}
+	const rect = event.currentTarget.getBoundingClientRect();
+	const ratio = (event.clientY - rect.top) / rect.height;
+	if (ratio < 0.25) {
+		return "before";
+	}
+	return ratio > 0.75 ? "after" : "inside";
+}
+
+/**
+ * 見出し行1つ
+ *
+ * @param props - 行の中身と操作
+ * @returns 行
+ */
+function HeadingRowView({
+	row,
+	label,
+	menuItems,
+	onMenuSelect,
+	onToggle,
+	onDropWorkspace,
+	onDropFolder,
+	t,
+}: {
+	row: HeadingRow;
+	label: string;
+	menuItems: readonly MenuEntry[];
+	onMenuSelect: (id: string) => void;
+	onToggle: () => void;
+	onDropWorkspace: (workspaceId: string) => void;
+	onDropFolder: (folderId: string, position: DropPosition) => void;
+	t: Messages;
+}) {
+	const [menuOpen, setMenuOpen] = useState(false);
+	const [drop, setDrop] = useState<DropPosition | null>(null);
+	const accepts = (event: DragEvent) =>
+		event.dataTransfer.types.includes(FOLDER_DRAG_TYPE) ||
+		event.dataTransfer.types.includes("text/plain");
+	return (
+		<div
+			className={[
+				"dwf-row",
+				menuOpen ? "dwf-menuOpen" : "",
+				drop === null ? "" : `dwf-drop-${drop}`,
+			]
+				.filter(Boolean)
+				.join(" ")}
+			style={
+				{
+					order: row.order,
+					"--dwf-indent": `${row.depth * INDENT_PX}px`,
+					...guideStyle(row.depth),
+				} as CSSProperties
+			}
+			role="treeitem"
+			tabIndex={0}
+			aria-expanded={!row.collapsed}
+			onClick={onToggle}
+			onKeyDown={(event) => {
+				if (
+					event.target === event.currentTarget &&
+					(event.key === "Enter" || event.key === " ")
+				) {
+					event.preventDefault();
+					onToggle();
+				}
+			}}
+			draggable={row.folder !== undefined}
+			onDragStart={(event) => {
+				if (row.folder === undefined) {
+					return;
+				}
+				event.stopPropagation();
+				event.dataTransfer.effectAllowed = "move";
+				event.dataTransfer.setData(FOLDER_DRAG_TYPE, row.folder.id);
+			}}
+			onDragOver={(event) => {
+				if (!accepts(event)) {
+					return;
+				}
+				event.preventDefault();
+				event.stopPropagation();
+				event.dataTransfer.dropEffect = "move";
+				setDrop(dropPosition(event, row.folder !== undefined));
+			}}
+			onDragLeave={() => {
+				setDrop(null);
+			}}
+			onDrop={(event) => {
+				const position = dropPosition(event, row.folder !== undefined);
+				setDrop(null);
+				const folderId = event.dataTransfer.getData(FOLDER_DRAG_TYPE);
+				if (folderId !== "") {
+					event.preventDefault();
+					event.stopPropagation();
+					onDropFolder(folderId, position);
+					return;
+				}
+				const text = event.dataTransfer.getData("text/plain");
+				if (text !== "") {
+					event.preventDefault();
+					onDropWorkspace(text);
+				}
+			}}
+		>
+			<span className="dwf-slot">
+				<IconTriangleRightFillRegular
+					className={row.collapsed ? "dwf-arrow" : "dwf-arrow dwf-arrowOpen"}
+				/>
+			</span>
+			<span className="dwf-slot">
+				<FolderIcon folder={row.folder} open={!row.collapsed} />
+			</span>
+			<span className="dwf-title">{label}</span>
+			{row.collapsed && row.count > 0 && (
+				<span className="dwf-count" title={t.count(row.count)}>
+					{row.count}
+				</span>
+			)}
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: 行の開閉を止めるだけで 操作は中のボタンが持つ */}
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: 同上 */}
+			<span
+				className="dwf-actions"
+				onClick={(event) => {
+					event.stopPropagation();
+				}}
+			>
+				<Menu
+					open={menuOpen}
+					onClose={() => {
+						setMenuOpen(false);
+					}}
+					items={menuItems}
+					onSelect={(id) => {
+						setMenuOpen(false);
+						onMenuSelect(id);
+					}}
+					portal
+					closeOnPointerLeave
+					anchor={
+						<button
+							type="button"
+							className="dwf-iconButton"
+							aria-label={t.folderActions(label)}
+							onClick={() => {
+								setMenuOpen((open) => !open);
+							}}
+						>
+							<IconEllipsisOutlineRegular />
+						</button>
+					}
+				/>
+			</span>
+		</div>
+	);
+}
+
+/**
+ * フォルダ行の「…」メニュー
+ *
+ * @param state - 今の状態
+ * @param folder - 対象のフォルダ
+ * @param workspaces - 純正のワークスペース
+ * @param t - 文言
+ * @returns メニューの行
+ */
+function folderMenu(
+	state: FolderState,
+	folder: Folder,
+	workspaces: readonly WorkspaceRow[],
+	t: Messages,
+): MenuEntry[] {
+	const siblings = childFolders(state, folder.parentId);
+	const blocked = descendantIds(state, folder.id);
+	blocked.add(folder.id);
+	const targets = state.folders
+		.filter((candidate) => !blocked.has(candidate.id))
+		.map((candidate) => ({
+			id: `move:${candidate.id}`,
+			label: folderPath(state, candidate.id),
+		}))
+		.sort((a, b) =>
+			a.label.localeCompare(b.label, undefined, { numeric: true }),
+		);
+	const addable = workspaces
+		.filter(
+			(workspace) => state.assignments[workspace.workspaceId] !== folder.id,
+		)
+		.map((workspace) => ({
+			id: `assign:${workspace.workspaceId}`,
+			label: workspace.title,
+		}));
+	return [
+		{ id: "rename", label: t.rename, icon: <IconEditOutlineRegular /> },
+		{
+			id: "icon",
+			label: t.changeIcon,
+			icon: <FolderIcon folder={folder} open={false} />,
+		},
+		{
+			id: "subfolder",
+			label: t.newSubfolder,
+			icon: <IconPlusOutlineRegular />,
+		},
+		{ type: "separator", id: "order" },
+		{
+			id: "up",
+			label: t.moveUp,
+			icon: <IconChevronUpOutlineRegular />,
+			...(siblings[0]?.id === folder.id ? { disabled: true } : {}),
+		},
+		{
+			id: "down",
+			label: t.moveDown,
+			icon: <IconChevronDownOutlineRegular />,
+			...(siblings.at(-1)?.id === folder.id ? { disabled: true } : {}),
+		},
+		{ type: "separator", id: "place" },
+		{
+			id: "assign",
+			label: t.addWorkspace,
+			icon: <IconFolderOpenRegular />,
+			...(addable.length === 0 ? { disabled: true } : { submenu: addable }),
+		},
+		{
+			id: "move",
+			label: t.moveTo,
+			icon: <IconTriangleRightFillRegular />,
+			submenu: [
+				...(folder.parentId === undefined
+					? []
+					: [{ id: "move:", label: t.topLevel }]),
+				...targets,
+			],
+			...(folder.parentId === undefined && targets.length === 0
+				? { disabled: true }
+				: {}),
+		},
+		{ type: "separator", id: "danger" },
+		{
+			id: "delete",
+			label: t.deleteFolder,
+			icon: <IconTrashOutlineRegular />,
+			danger: true,
+		},
+	];
+}
+
+/**
+ * 名前を入れるダイアログ
+ *
+ * @param props - 見出し 初期値 確定時の処理
+ * @returns ダイアログ
+ */
+function NameDialog({
+	title,
+	initial,
+	confirmLabel,
+	onConfirm,
+	onClose,
+	t,
+}: {
+	title: string;
+	initial: string;
+	confirmLabel: string;
+	onConfirm: (name: string) => void;
+	onClose: () => void;
+	t: Messages;
+}) {
+	const [draft, setDraft] = useState(initial);
+	const trimmed = draft.trim();
+	const submit = () => {
+		if (trimmed !== "") {
+			onConfirm(trimmed);
+		}
+	};
+	return (
+		<Modal
+			open
+			onClose={onClose}
+			title={title}
+			closeLabel={t.close}
+			footer={
+				<>
+					<Button
+						variant="outline"
+						className="dwf-modalAction"
+						onClick={onClose}
+					>
+						{t.cancel}
+					</Button>
+					<Button
+						variant="primary"
+						className="dwf-modalAction"
+						disabled={trimmed === ""}
+						onClick={submit}
+					>
+						{confirmLabel}
+					</Button>
+				</>
+			}
+		>
+			<Input
+				data-modal-autofocus
+				value={draft}
+				placeholder={t.namePlaceholder}
+				maxLength={80}
+				onChange={(event) => {
+					setDraft(event.target.value);
+				}}
+				onKeyDown={(event) => {
+					if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+						// 閉じたダイアログが焦点を引き金のボタンへ返すため 既定の動作を
+						// 止めないと 同じ Enter がそのボタンを押して作成画面が開き直す
+						event.preventDefault();
+						submit();
+					}
+				}}
+			/>
+		</Modal>
+	);
+}
+
+/**
+ * アイコンを選ぶダイアログ
+ *
+ * @param props - 対象のフォルダと確定時の処理
+ * @returns ダイアログ
+ */
+function IconDialog({
+	folder,
+	onConfirm,
+	onClose,
+	t,
+}: {
+	folder: Folder;
+	onConfirm: (icon: string) => void;
+	onClose: () => void;
+	t: Messages;
+}) {
+	const [draft, setDraft] = useState(folder.icon ?? "");
+	return (
+		<Modal
+			open
+			onClose={onClose}
+			title={t.iconTitle}
+			closeLabel={t.close}
+			footer={
+				<>
+					<Button
+						variant="outline"
+						className="dwf-modalAction"
+						onClick={() => {
+							onConfirm("");
+						}}
+					>
+						{t.resetIcon}
+					</Button>
+					<Button
+						variant="primary"
+						className="dwf-modalAction"
+						onClick={() => {
+							onConfirm(draft.trim());
+						}}
+					>
+						{t.save}
+					</Button>
+				</>
+			}
+		>
+			<Input
+				data-modal-autofocus
+				value={draft}
+				placeholder={t.iconPlaceholder}
+				maxLength={16}
+				onChange={(event) => {
+					setDraft(event.target.value);
+				}}
+			/>
+			<div className="dwf-iconGrid">
+				{ICON_PRESETS.map((icon) => (
+					<button
+						key={icon}
+						type="button"
+						className="dwf-iconChoice"
+						aria-pressed={draft === icon}
+						onClick={() => {
+							setDraft(icon);
+						}}
+					>
+						{icon}
+					</button>
+				))}
+			</div>
+		</Modal>
+	);
+}
+
+/**
+ * 開いているダイアログを描く
+ *
+ * @param props - ダイアログと閉じる処理
+ * @returns ダイアログ 開いていなければ null
+ */
+function DialogView({
+	dialog,
+	onClose,
+	t,
+}: {
+	dialog: Dialog | null;
+	onClose: () => void;
+	t: Messages;
+}): ReactNode {
+	if (dialog === null) {
+		return null;
+	}
+	switch (dialog.kind) {
+		case "create":
+			return (
+				<NameDialog
+					title={t.createTitle}
+					initial=""
+					confirmLabel={t.create}
+					onClose={onClose}
+					t={t}
+					onConfirm={(name) => {
+						const id = newId();
+						store.update((state) => {
+							const created = createFolder(state, id, name, dialog.parentId);
+							return dialog.assign === undefined
+								? created
+								: assignWorkspace(created, dialog.assign, id);
+						});
+						onClose();
+					}}
+				/>
+			);
+		case "rename":
+			return (
+				<NameDialog
+					title={t.renameTitle}
+					initial={dialog.folder.name}
+					confirmLabel={t.save}
+					onClose={onClose}
+					t={t}
+					onConfirm={(name) => {
+						store.update((state) =>
+							renameFolder(state, dialog.folder.id, name),
+						);
+						onClose();
+					}}
+				/>
+			);
+		case "icon":
+			return (
+				<IconDialog
+					folder={dialog.folder}
+					onClose={onClose}
+					t={t}
+					onConfirm={(icon) => {
+						store.update((state) =>
+							setFolderIcon(state, dialog.folder.id, icon),
+						);
+						onClose();
+					}}
+				/>
+			);
+		case "delete":
+			return (
+				<Modal
+					open
+					onClose={onClose}
+					title={t.deleteTitle}
+					closeLabel={t.close}
+					footer={
+						<>
+							<Button
+								variant="outline"
+								className="dwf-modalAction"
+								onClick={onClose}
+							>
+								{t.cancel}
+							</Button>
+							<Button
+								variant="primary"
+								className="dwf-modalAction"
+								onClick={() => {
+									store.update((state) =>
+										deleteFolder(state, dialog.folder.id),
+									);
+									onClose();
+								}}
+							>
+								{t.delete}
+							</Button>
+						</>
+					}
+				>
+					<p className="dwf-modalText">{t.deleteBody(dialog.folder.name)}</p>
+				</Modal>
+			);
+	}
+}
+
+/**
+ * 純正のワークスペースの一覧を読む
+ *
+ * @param useWorkspaces - 根の読み口 無い構成では undefined
+ * @returns ワークスペースと 読み終えたか
+ */
+function useWorkspaceRows(useWorkspaces: OverlayProps["useWorkspaces"]): {
+	rows: readonly WorkspaceRow[];
+	ready: boolean;
+} {
+	const fallback = (
+		selector: (snapshot: {
+			items: readonly WorkspaceRow[];
+			phase: string;
+		}) => unknown,
+	) => selector({ items: [], phase: "pending" });
+	const read = (useWorkspaces ?? fallback) as NonNullable<
+		OverlayProps["useWorkspaces"]
+	>;
+	const items = read((snapshot) => snapshot.items);
+	const phase = read((snapshot) => snapshot.phase);
+	return { rows: items, ready: phase === "ready" };
+}
+
+/**
+ * フォルダの見出しと 並びの CSS を純正の一覧へ足す
+ *
+ * @param props - 浮き層が配る props
+ * @returns ポータルとダイアログ
+ */
+function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
+	const t = useMessages();
+	const state = useSyncExternalStore(
+		store.subscribe,
+		store.getSnapshot,
+		store.getServerSnapshot,
+	);
+	const { tree, header, sectionIds } = useSurface();
+	const { rows: workspaces, ready } = useWorkspaceRows(useWorkspaces);
+	const [dialog, setDialog] = useState<Dialog | null>(null);
+	const layout = useMemo(
+		() => computeLayout(state, sectionIds),
+		[state, sectionIds],
+	);
+	const css = useMemo(() => layoutCss(layout), [layout]);
+
+	useEffect(() => installStyle(LAYOUT_TAG_ID, css), [css]);
+
+	useEffect(() => {
+		if (!ready) {
+			return;
+		}
+		const ids = new Set(workspaces.map((workspace) => workspace.workspaceId));
+		store.update((current) => pruneAssignments(current, ids));
+	}, [ready, workspaces]);
+
+	const knownWorkspace = (id: string) =>
+		workspaces.some((workspace) => workspace.workspaceId === id) ||
+		sectionIds.includes(id);
+
+	const onFolderMenu = (folder: Folder, id: string) => {
+		if (id === "rename") {
+			setDialog({ kind: "rename", folder });
+		} else if (id === "icon") {
+			setDialog({ kind: "icon", folder });
+		} else if (id === "subfolder") {
+			setDialog({ kind: "create", parentId: folder.id });
+		} else if (id === "delete") {
+			setDialog({ kind: "delete", folder });
+		} else if (id === "up" || id === "down") {
+			store.update((current) =>
+				shiftFolder(current, folder.id, id === "up" ? -1 : 1),
+			);
+		} else if (id.startsWith("assign:")) {
+			store.update((current) =>
+				assignWorkspace(current, id.slice("assign:".length), folder.id),
+			);
+		} else if (id.startsWith("move:")) {
+			const target = id.slice("move:".length);
+			store.update((current) =>
+				moveFolder(current, folder.id, target === "" ? undefined : target),
+			);
+		}
+	};
+
+	const headings =
+		tree === null
+			? null
+			: layout.rows
+					.filter((row) => !row.hidden)
+					.map((row) => {
+						const folder = row.folder;
+						const key = folder?.id ?? UNASSIGNED_ID;
+						return (
+							<HeadingRowView
+								key={`dwf:${key}`}
+								row={row}
+								label={folder?.name ?? t.unassigned}
+								t={t}
+								menuItems={
+									folder === undefined
+										? [
+												{
+													id: "create",
+													label: t.newFolder,
+													icon: <IconPlusOutlineRegular />,
+												},
+											]
+										: folderMenu(state, folder, workspaces, t)
+								}
+								onMenuSelect={(id) => {
+									if (folder === undefined) {
+										setDialog({ kind: "create" });
+									} else {
+										onFolderMenu(folder, id);
+									}
+								}}
+								onToggle={() => {
+									store.update((current) => toggleCollapsed(current, key));
+								}}
+								onDropWorkspace={(workspaceId) => {
+									if (knownWorkspace(workspaceId)) {
+										store.update((current) =>
+											assignWorkspace(current, workspaceId, folder?.id),
+										);
+									}
+								}}
+								onDropFolder={(folderId, position) => {
+									store.update((current) =>
+										folder === undefined
+											? moveFolder(current, folderId)
+											: placeFolder(current, folderId, folder.id, position),
+									);
+								}}
+							/>
+						);
+					});
+
+	return (
+		<>
+			{tree !== null && headings !== null && createPortal(headings, tree)}
+			{header !== null &&
+				createPortal(
+					<Tooltip label={t.newFolder} side="bottom" delayMs={500}>
+						<button
+							type="button"
+							className="dwf-headerButton"
+							aria-label={t.newFolder}
+							onClick={() => {
+								setDialog({ kind: "create" });
+							}}
+						>
+							<IconFolderCloseRegular size={16} />
+						</button>
+					</Tooltip>,
+					header,
+				)}
+			<DialogView
+				dialog={dialog}
+				t={t}
+				onClose={() => {
+					setDialog(null);
+				}}
+			/>
+		</>
+	);
+}
+
+/**
+ * 浮き層へ常駐する部品を登録する
+ *
+ * @param ctx - クライアント側 cordis コンテキスト
+ */
+export function apply(ctx: Context): void {
+	ctx.effect(
+		() => installStyle(STYLE_TAG_ID, STYLE),
+		"workspace-folders: style",
+	);
+	ctx.effect(
+		() => () => {
+			document.getElementById(LAYOUT_TAG_ID)?.remove();
+		},
+		"workspace-folders: layout cleanup",
+	);
+	ctx.slots.inject(OVERLAY, () =>
+		ctx.slots.register({ name: OVERLAY, id: ENTRY_ID }, WorkspaceFolders),
+	);
+}

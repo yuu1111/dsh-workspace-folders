@@ -1,0 +1,16 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.6.2/schema.json",
+	"extends": [
+		"@yuu1111/biome-config/biome",
+		"@yuu1111/biome-config/plugins/core"
+	],
+	"files": {
+		"includes": [
+			"src/**",
+			"tests/**",
+			"scripts/**",
+			"*.ts",
+			"*.json"
+		]
+	}
+}

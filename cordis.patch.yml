@@ -1,0 +1,9 @@
+# dsh-workspace-folders layer.
+#
+# Adds one plugin row. The host half is empty and exists so the Loader has an
+# entry whose package the client scan discovers. The browser half groups the
+# shipped workspace browser's rows into folders without replacing it, so the
+# Session menus, status dots, search, and view options stay the shipped ones.
+- insert:
+    - id: workspace-folders
+      name: dsh-workspace-folders
