@@ -26,7 +26,6 @@ import {
 	Input,
 	Menu,
 	type MenuEntry,
-	MenuItemButton,
 	Modal,
 	Tooltip,
 } from "@deepseek-ai/dsh-client-ui-primitives";
@@ -1125,6 +1124,70 @@ function useWorkspaceMenu(tree: HTMLElement | null): WorkspaceMenu | null {
 }
 
 /**
+ * 純正の「…」メニューへ項目を1つ足す
+ *
+ * React のポータルで足すと 純正のメニューは指が項目へ移ったのを外へ出たと
+ * 受け取り 200ms 後に閉じてしまう そのため純正の項目を DOM のまま複製し
+ * 純正の木の中の要素として扱わせる 危険な項目（削除）があればその前へ置く
+ *
+ * @param viewport - 純正のメニューの項目が並ぶ要素
+ * @param label - 項目の文言
+ * @param icon - 先頭に出すアイコンの見本 複製して使う
+ * @param onSelect - 選ばれたときの処理
+ * @returns 取り除く関数 足せなかったときは undefined
+ */
+function insertShippedMenuItem(
+	viewport: HTMLElement,
+	label: string,
+	icon: Element | null,
+	onSelect: () => void,
+): (() => void) | undefined {
+	const items = Array.from(
+		viewport.querySelectorAll<HTMLButtonElement>(
+			':scope > * > button[role="menuitem"]',
+		),
+	);
+	const sample = items.find((item) => !/_danger/.test(item.className));
+	const sampleWrap = sample?.parentElement;
+	if (sample === undefined || sampleWrap == null) {
+		return undefined;
+	}
+	const wrap = document.createElement("div");
+	wrap.className = sampleWrap.className;
+	const button = sample.cloneNode(true) as HTMLButtonElement;
+	button.disabled = false;
+	button.removeAttribute("aria-keyshortcuts");
+	button.removeAttribute("aria-current");
+	for (const extra of Array.from(
+		button.querySelectorAll('[class*="_shortcut"], [class*="_check"]'),
+	)) {
+		extra.remove();
+	}
+	const text = button.querySelector('[class*="_itemLabel"]');
+	if (text === null) {
+		return undefined;
+	}
+	text.textContent = label;
+	const iconSlot = button.querySelector('[class*="_itemIcon"]');
+	if (iconSlot !== null && icon !== null) {
+		iconSlot.replaceChildren(icon.cloneNode(true));
+	}
+	button.addEventListener("click", onSelect);
+	wrap.append(button);
+	const danger = items.find((item) => /_danger/.test(item.className));
+	const before = danger?.parentElement;
+	if (before != null && before.parentElement === viewport) {
+		viewport.insertBefore(wrap, before);
+	} else {
+		viewport.append(wrap);
+	}
+	return () => {
+		button.removeEventListener("click", onSelect);
+		wrap.remove();
+	};
+}
+
+/**
  * 純正の「…」メニューを閉じる
  *
  * 純正のメニューは外側の pointerdown で閉じるため 同じ合図を body へ送る
@@ -1293,6 +1356,31 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 	});
 
 	const workspaceMenu = useWorkspaceMenu(tree);
+	const iconTemplate = useRef<HTMLSpanElement>(null);
+	const openWorkspaceIcon = useRef<(workspaceId: string) => void>(
+		() => undefined,
+	);
+	openWorkspaceIcon.current = (workspaceId) => {
+		setDialog({
+			kind: "workspaceIcon",
+			workspaceId,
+			title:
+				workspaces.find((workspace) => workspace.workspaceId === workspaceId)
+					?.title ?? workspaceId,
+		});
+	};
+
+	useEffect(() => {
+		if (workspaceMenu === null) {
+			return;
+		}
+		const { workspaceId, viewport } = workspaceMenu;
+		const icon = iconTemplate.current?.firstElementChild ?? null;
+		return insertShippedMenuItem(viewport, t.changeIcon, icon, () => {
+			closeShippedMenu();
+			openWorkspaceIcon.current(workspaceId);
+		});
+	}, [workspaceMenu, t]);
 
 	useEffect(() => {
 		if (!ready) {
@@ -1405,28 +1493,9 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 					</Tooltip>,
 					header,
 				)}
-			{workspaceMenu !== null &&
-				createPortal(
-					<MenuItemButton
-						separatorBefore
-						icon={<IconEditOutlineRegular />}
-						onSelect={() => {
-							const { workspaceId } = workspaceMenu;
-							closeShippedMenu();
-							setDialog({
-								kind: "workspaceIcon",
-								workspaceId,
-								title:
-									workspaces.find(
-										(workspace) => workspace.workspaceId === workspaceId,
-									)?.title ?? workspaceId,
-							});
-						}}
-					>
-						{t.changeIcon}
-					</MenuItemButton>,
-					workspaceMenu.viewport,
-				)}
+			<span ref={iconTemplate} hidden>
+				<IconFolderCloseRegular />
+			</span>
 			<DialogView
 				dialog={dialog}
 				t={t}
