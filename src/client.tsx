@@ -129,11 +129,6 @@ const NO_CUSTOM_ICONS: readonly CustomIcon[] = [];
 const SETTINGS_ENTRY_ID = "workspace-folders";
 
 /**
- * 状態を保存する localStorage のキー
- */
-const STORAGE_KEY = "dsh-workspace-folders.state.v1";
-
-/**
  * フォルダ行をドラッグするときの型
  */
 const FOLDER_DRAG_TYPE = "application/x-dsh-workspace-folder";
@@ -297,37 +292,10 @@ type Dialog =
 	| { kind: "icon"; folder: Folder }
 	| { kind: "workspaceIcon"; workspaceId: string; title: string }
 	| { kind: "delete"; folder: Folder };
-
 /**
- * 状態の置き場 DSH の設定へつなぐまでと つなげない構成では localStorage を使う
+ * 状態の置き場 DSH の設定へつないでから読み書きする
  */
-const store = createFolderStore({
-	read() {
-		try {
-			return globalThis.localStorage?.getItem(STORAGE_KEY) ?? null;
-		} catch {
-			return null;
-		}
-	},
-	write(raw) {
-		try {
-			globalThis.localStorage?.setItem(STORAGE_KEY, raw);
-		} catch {
-			// 保存できない環境でも このタブの間は変更を保つ
-		}
-	},
-	watch(listener) {
-		const onStorage = (event: StorageEvent) => {
-			if (event.key === STORAGE_KEY) {
-				listener();
-			}
-		};
-		globalThis.addEventListener?.("storage", onStorage);
-		return () => {
-			globalThis.removeEventListener?.("storage", onStorage);
-		};
-	},
-});
+const store = createFolderStore();
 
 /**
  * スタイルタグを document へ入れる

@@ -71,11 +71,6 @@ the profile's `cordis.patch.yml`. Every device that opens the same DSH Web,
 such as a PC and a phone, sees the same folders. Nothing here changes DSH's
 workspace registry or its order.
 
-Earlier versions kept the state in the browser's `localStorage`
-(`dsh-workspace-folders.state.v1`). While the settings hold no folders yet, the
-first browser that still has that state sends it once. When the settings
-service is not composed, the state stays in `localStorage`.
-
 ## Limits
 
 - The ordering CSS targets the shipped list's DOM shape

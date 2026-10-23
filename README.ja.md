@@ -67,10 +67,6 @@ dsh plugin --profile web add github:yuu1111/dsh-workspace-folders
 書き込まれるため PC とスマホのように 同じ DSH Web を開く端末ではどれも同じフォルダが見えます
 DSH のワークスペースの登録や並び順は変えません
 
-以前の版はブラウザの `localStorage`（`dsh-workspace-folders.state.v1`）に保存していました
-設定にまだフォルダが無い間は その状態を持つブラウザが最初に開いたときに1度だけ設定へ送ります
-設定サービスを組み込んでいない構成では 引き続き `localStorage` に保存します
-
 ## 制約
 
 - 純正の一覧の DOM の形（`[data-slot="sidebar.workspaces"]` の中の `role="tree"` と
