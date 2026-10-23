@@ -28,9 +28,9 @@ const OUT_DIR = "lib";
 /**
  * ホスト側が実行時に要求してよい specifier
  *
- * ホスト側は何も読み込まない
+ * 設定の形を宣言する schemastery は dependencies から解決する
  */
-const HOST_EXTERNALS: string[] = [];
+const HOST_EXTERNALS = ["@deepseek-ai/schemastery"];
 
 /**
  * ブラウザ側が実行時に要求してよい specifier

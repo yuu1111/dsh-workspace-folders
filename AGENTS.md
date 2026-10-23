@@ -2,8 +2,9 @@
 
 ## Project Structure & Module Organization
 
-`src/index.ts` はホスト側の本体で プラグイン名 `workspace-folders` を公開するだけの空の `apply` を持つ
-Loader に行を1つ持たせ クライアントの走査に `./client` を見つけさせるためだけにある
+`src/index.ts` はホスト側の本体で プラグイン名 `workspace-folders` と volatile な設定 `state` だけを宣言する
+フォルダの状態はこの設定に JSON の文字列で置き プロファイルの cordis.patch.yml に残るため どの端末のブラウザからも同じに見える
+`src/store.ts` はブラウザ側の状態の置き場で `configForms.get("workspace-folders")` を正とし 設定が無い構成では localStorage へ退避する 設定が空のときは localStorage の旧い状態を1度だけ送る
 `src/client.tsx` はブラウザ側の本体で `slots` を待ち `shell.overlay` へ何も描かない常駐部品を1つ（id `workspace-folders`）登録する
 その部品は純正のワークスペース一覧の木（`[data-slot="sidebar.workspaces"] [role="tree"]`）を MutationObserver で追い フォルダの見出し行を React ポータルで木へ差し込み 見出しの新規作成ボタンを一覧の見出しへ差し込む
 純正の要素へは属性もイベントも書き込まず 並びと字下げと折りたたみは `src/layout-css.ts` が作る CSS を1つの style タグへ入れて決める

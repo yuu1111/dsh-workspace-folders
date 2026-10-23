@@ -62,8 +62,14 @@ dsh plugin --profile web add github:yuu1111/dsh-workspace-folders
 
 ## 保存先
 
-フォルダと割り当てとアイコンと追加した画像はブラウザの `localStorage`（`dsh-workspace-folders.state.v1`）に
-保存します ブラウザごとの設定になり DSH のワークスペースの登録や並び順は変えません
+フォルダと割り当てとアイコンと追加した画像は DSH の設定に保存します
+`workspace-folders` 項目の volatile な設定 `state` として プロファイルの `cordis.patch.yml` に
+書き込まれるため PC とスマホのように 同じ DSH Web を開く端末ではどれも同じフォルダが見えます
+DSH のワークスペースの登録や並び順は変えません
+
+以前の版はブラウザの `localStorage`（`dsh-workspace-folders.state.v1`）に保存していました
+設定にまだフォルダが無い間は その状態を持つブラウザが最初に開いたときに1度だけ設定へ送ります
+設定サービスを組み込んでいない構成では 引き続き `localStorage` に保存します
 
 ## 制約
 

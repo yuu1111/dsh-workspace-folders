@@ -1,7 +1,9 @@
 # dsh-workspace-folders layer.
 #
-# Adds one plugin row. The host half is empty and exists so the Loader has an
-# entry whose package the client scan discovers. The browser half groups the
+# Adds one plugin row. The host half declares one volatile config field,
+# `state`, that holds the folders; the browser half reads and writes it through
+# the settings service, so every device sees the same folders. The entry id is
+# the settings namespace the browser half addresses. The browser half groups the
 # shipped workspace browser's rows into folders without replacing it, so the
 # Session menus, status dots, search, and view options stay the shipped ones.
 - insert:

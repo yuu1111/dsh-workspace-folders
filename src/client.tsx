@@ -78,14 +78,12 @@ import {
 	type DropPosition,
 	deleteFolder,
 	descendantIds,
-	EMPTY_STATE,
 	type Folder,
 	type FolderState,
 	folderPath,
 	type HeadingRow,
 	INDENT_PX,
 	moveFolder,
-	parseState,
 	placeFolder,
 	pruneWorkspaces,
 	removeCustomIcon,
@@ -97,6 +95,7 @@ import {
 	UNASSIGNED_ID,
 } from "./model";
 import { createRowMotion } from "./motion";
+import { createFolderStore, type HostForm } from "./store";
 
 /**
  * 常駐させる枠
@@ -104,6 +103,15 @@ import { createRowMotion } from "./motion";
  * 画面全体の浮き層 何も描かず 見出し行はポータルでサイドバーへ出す
  */
 const OVERLAY = "shell.overlay";
+
+declare module "@deepseek-ai/cordis" {
+	interface Context {
+		/**
+		 * DSH の設定を読み書きするサービス ui-settings が配る
+		 */
+		configForms: { get(entryId: string): HostForm };
+	}
+}
 
 /**
  * 登録 id
@@ -114,6 +122,11 @@ const ENTRY_ID = "workspace-folders";
  * 画像のアイコンが1つも無いときの並び 毎回同じ値を渡して描き直しを避ける
  */
 const NO_CUSTOM_ICONS: readonly CustomIcon[] = [];
+
+/**
+ * 状態を置くホスト側の設定項目の id `cordis.patch.yml` の行と合わせる
+ */
+const SETTINGS_ENTRY_ID = "workspace-folders";
 
 /**
  * 状態を保存する localStorage のキー
@@ -286,65 +299,35 @@ type Dialog =
 	| { kind: "delete"; folder: Folder };
 
 /**
- * localStorage を背にした状態の置き場
- *
- * 別のタブでの変更も `storage` イベントで拾う
+ * 状態の置き場 DSH の設定へつなぐまでと つなげない構成では localStorage を使う
  */
-const store = (() => {
-	let cached: { raw: string | null; state: FolderState } | undefined;
-	const listeners = new Set<() => void>();
-	const read = (): string | null => {
+const store = createFolderStore({
+	read() {
 		try {
 			return globalThis.localStorage?.getItem(STORAGE_KEY) ?? null;
 		} catch {
 			return null;
 		}
-	};
-	const getSnapshot = (): FolderState => {
-		const raw = read();
-		if (cached === undefined || cached.raw !== raw) {
-			cached = { raw, state: parseState(raw) };
+	},
+	write(raw) {
+		try {
+			globalThis.localStorage?.setItem(STORAGE_KEY, raw);
+		} catch {
+			// 保存できない環境でも このタブの間は変更を保つ
 		}
-		return cached.state;
-	};
-	const notify = () => {
-		for (const listener of [...listeners]) {
-			listener();
-		}
-	};
-	return {
-		getSnapshot,
-		getServerSnapshot: (): FolderState => EMPTY_STATE,
-		subscribe(listener: () => void): () => void {
-			listeners.add(listener);
-			const onStorage = (event: StorageEvent) => {
-				if (event.key === STORAGE_KEY) {
-					listener();
-				}
-			};
-			globalThis.addEventListener?.("storage", onStorage);
-			return () => {
-				listeners.delete(listener);
-				globalThis.removeEventListener?.("storage", onStorage);
-			};
-		},
-		update(change: (state: FolderState) => FolderState): void {
-			const current = getSnapshot();
-			const next = change(current);
-			if (next === current) {
-				return;
+	},
+	watch(listener) {
+		const onStorage = (event: StorageEvent) => {
+			if (event.key === STORAGE_KEY) {
+				listener();
 			}
-			const raw = JSON.stringify(next);
-			try {
-				globalThis.localStorage?.setItem(STORAGE_KEY, raw);
-			} catch {
-				// 保存できない環境でも このタブの間は変更を保つ
-			}
-			cached = { raw, state: next };
-			notify();
-		},
-	};
-})();
+		};
+		globalThis.addEventListener?.("storage", onStorage);
+		return () => {
+			globalThis.removeEventListener?.("storage", onStorage);
+		};
+	},
+});
 
 /**
  * スタイルタグを document へ入れる
@@ -1317,11 +1300,7 @@ function WorkspaceFolders({
 	useSessionStatus,
 }: OverlayProps) {
 	const t = useMessages();
-	const state = useSyncExternalStore(
-		store.subscribe,
-		store.getSnapshot,
-		store.getServerSnapshot,
-	);
+	const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
 	const { tree, header, sectionIds } = useSurface();
 	const { rows: workspaces, ready, archived } = useWorkspaceRows(useWorkspaces);
 	const workspaceActivity = useWorkspaceActivities({
@@ -1664,6 +1643,12 @@ export function apply(ctx: Context): void {
 		},
 		"workspace-folders: layout cleanup",
 	);
+	ctx.inject(["configForms"], (scope) => {
+		scope.effect(
+			() => store.attach(scope.configForms.get(SETTINGS_ENTRY_ID)),
+			"workspace-folders: host state",
+		);
+	});
 	ctx.slots.inject(OVERLAY, () =>
 		ctx.slots.register({ name: OVERLAY, id: ENTRY_ID }, WorkspaceFolders),
 	);

@@ -65,9 +65,16 @@ folders and workspaces that used it go back to the default icon.
 
 ## Storage
 
-Folders, assignments, icons, and added images live in the browser's `localStorage`
-(`dsh-workspace-folders.state.v1`). They are per browser and never change
-DSH's workspace registry or its order.
+Folders, assignments, icons, and added images live in DSH's settings, as the
+volatile `state` field of the `workspace-folders` entry, so they are written to
+the profile's `cordis.patch.yml`. Every device that opens the same DSH Web,
+such as a PC and a phone, sees the same folders. Nothing here changes DSH's
+workspace registry or its order.
+
+Earlier versions kept the state in the browser's `localStorage`
+(`dsh-workspace-folders.state.v1`). While the settings hold no folders yet, the
+first browser that still has that state sends it once. When the settings
+service is not composed, the state stays in `localStorage`.
 
 ## Limits
 
