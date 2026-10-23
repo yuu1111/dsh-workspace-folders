@@ -10,6 +10,9 @@ Loader に行を1つ持たせ クライアントの走査に `./client` を見�
 `src/model.ts` はフォルダの状態（`FolderState`）と操作と `computeLayout` を持つ純粋な関数だけを置く
 `src/layout-css.ts` は純正の DOM に依存するセレクタと CSS の生成を集める
 `src/i18n.ts` は日本語と英語の文言を持ち `<html lang>` で選ぶ
+`src/icon-catalog.ts` はアイコンの値と絵文字の表と検索の純粋な関数を持つ
+`src/icons.tsx` は選べる DSH 純正のアイコンと 保存した値を描く `IconGlyph` を持つ
+`src/icon-picker.tsx` は Discord に倣ったアイコンのピッカーを持つ 絵文字の表は `build.ts` が emojibase-data から作り `virtual:emoji-catalog` としてバンドルへ埋める
 `build.ts` は Bun のバンドラで `lib/` を出力し ブラウザ側を `window.__ModuleLoader__.load({ id, factory })` のローダー形式へ包む
 `lib/` は生成物で git の管理外にあり 公開 tarball へは `prepack` が組み込む
 `README.md` と `README.ja.md` は互いの翻訳で 常に一緒に更新する

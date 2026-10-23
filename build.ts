@@ -9,6 +9,8 @@
  */
 
 import { readFile, rm, writeFile } from "node:fs/promises";
+import type { BunPlugin } from "bun";
+import { buildEmojiCatalog, MAX_EMOJI_VERSION } from "./src/icon-catalog";
 
 /**
  * 配信側がモジュール名として使う値
@@ -115,6 +117,37 @@ function assertClientBundle(body: string): void {
 	}
 }
 
+/**
+ * `virtual:emoji-catalog` を emojibase-data から作った表へ解決する
+ *
+ * 表は日本語と英語の名前と検索語を持ち ブラウザ側のバンドルへ埋める
+ */
+const emojiCatalogPlugin: BunPlugin = {
+	name: "emoji-catalog",
+	setup(build) {
+		build.onResolve({ filter: /^virtual:emoji-catalog$/ }, (args) => ({
+			path: args.path,
+			namespace: "emoji-catalog",
+		}));
+		build.onLoad({ filter: /.*/, namespace: "emoji-catalog" }, async () => {
+			const read = async (path: string) =>
+				JSON.parse(
+					await readFile(`node_modules/emojibase-data/${path}`, "utf8"),
+				);
+			const catalog = buildEmojiCatalog(
+				await read("ja/compact.json"),
+				await read("en/compact.json"),
+				await read("en/data.json"),
+				MAX_EMOJI_VERSION,
+			);
+			return {
+				contents: `export default ${JSON.stringify(catalog)};`,
+				loader: "js",
+			};
+		});
+	},
+};
+
 await rm(OUT_DIR, { force: true, recursive: true });
 
 assertBuilt(
@@ -137,6 +170,7 @@ assertBuilt(
 		format: "cjs",
 		external: CLIENT_EXTERNALS,
 		jsx: { development: false },
+		plugins: [emojiCatalogPlugin],
 	}),
 );
 

@@ -82,6 +82,7 @@
 		"@yuu1111/biome-config": "^2.2.4",
 		"@yuu1111/knip-config": "^2.1.0",
 		"@yuu1111/tsconfig": "^1.0.7",
+		"emojibase-data": "18.0.0",
 		"knip": "^6.41.0",
 		"react": "^19.3.1",
 		"react-dom": "^19.3.1",

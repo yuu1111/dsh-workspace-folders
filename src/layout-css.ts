@@ -4,6 +4,7 @@
  * DOM に触れない純粋な関数だけを置く 純正の構造に依存する場所はここへ集める
  */
 
+import { DSH_ICON_PREFIX } from "./icon-catalog";
 import { type FolderLayout, INDENT_PX } from "./model";
 
 /**
@@ -81,22 +82,38 @@ const GUIDE_LINE =
 const GUIDE_OFFSET_PX = 15;
 
 /**
- * 純正のワークスペース行のフォルダアイコンを絵文字へ差し替える CSS
+ * 純正のワークスペース行のフォルダアイコンを 選んだアイコンへ差し替える CSS
  *
- * 純正の行へは書き込まず 行の中のアイコンの枠で svg を隠し 疑似要素で絵文字を出す
+ * 純正の行へは書き込まず 行の中のアイコンの枠で svg を隠し 疑似要素で描く
+ * 絵文字は文字として出し DSH 純正のアイコンは svg を mask にして文字色で塗る
  * フォルダが無くても効かせるため 並びの CSS とは別に作る
  *
- * @param icons - ワークスペース id から絵文字への対応
+ * @param icons - ワークスペース id からアイコンの値への対応
+ * @param svgOf - DSH 純正のアイコンの値から svg の文字列を引く 絵文字なら undefined
  * @returns スタイルシートの本文 アイコンが無ければ空文字
  */
-export function iconCss(icons: Readonly<Record<string, string>> = {}): string {
+export function iconCss(
+	icons: Readonly<Record<string, string>> = {},
+	svgOf: (value: string) => string | undefined = () => undefined,
+): string {
 	const rules: string[] = [];
 	for (const [workspaceId, icon] of Object.entries(icons)) {
 		const slot = `${SLOT_SELECTOR} [data-row-key=${quote(ROW_KEY_PREFIX + workspaceId)}] > [class*="_folder"]`;
-		rules.push(
-			`${slot} > svg{display:none}`,
-			`${slot}::before{content:${quote(icon.replace(/[\r\n]/g, ""))};font-size:14px;line-height:1}`,
-		);
+		const svg = svgOf(icon);
+		if (svg === undefined && icon.startsWith(DSH_ICON_PREFIX)) {
+			continue;
+		}
+		rules.push(`${slot} > svg{display:none}`);
+		if (svg === undefined) {
+			rules.push(
+				`${slot}::before{content:${quote(icon.replace(/[\r\n]/g, ""))};font-size:14px;line-height:1}`,
+			);
+		} else {
+			const url = quote(`data:image/svg+xml,${encodeURIComponent(svg)}`);
+			rules.push(
+				`${slot}::before{content:"";width:16px;height:16px;background:currentColor;-webkit-mask:url(${url}) center/contain no-repeat;mask:url(${url}) center/contain no-repeat}`,
+			);
+		}
 	}
 	return rules.join("\n");
 }

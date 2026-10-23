@@ -62,6 +62,15 @@ describe("layoutCss", () => {
 		expect(css).toContain('::before{content:"🐋"');
 	});
 
+	test("DSH 純正のアイコンは svg を文字色で塗る mask にし 知らないものは描かない", () => {
+		const css = iconCss({ a: "dsh:code", b: "dsh:gone" }, (value) =>
+			value === "dsh:code" ? '<svg width="16"></svg>' : undefined,
+		);
+		expect(css).toContain("mask:url(");
+		expect(css).toContain("background:currentColor");
+		expect(css).not.toContain("workspace:b");
+	});
+
 	test("属性値の引用符と円記号を逃がす", () => {
 		expect(quote('a"b\\c')).toBe('"a\\"b\\\\c"');
 	});

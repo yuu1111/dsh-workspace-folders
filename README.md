@@ -3,7 +3,8 @@
 English | [日本語](README.ja.md)
 
 A DeepSeek Harness Web GUI plugin that groups sidebar workspaces into folders.
-Folders nest and can carry an emoji icon, and so can each workspace.
+Folders nest, and folders and workspaces can each carry an icon: any emoji or
+one of the DSH UI icons, picked from a searchable Discord-style picker.
 
 ```
 ▾ 🛠️ DSH plugins

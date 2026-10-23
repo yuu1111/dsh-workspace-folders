@@ -43,6 +43,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { type Messages, messagesFor } from "./i18n";
+import { IconPicker } from "./icon-picker";
+import { DSH_ICONS, IconGlyph } from "./icons";
 import {
 	guideBackground,
 	iconCss,
@@ -101,36 +103,6 @@ const STORAGE_KEY = "dsh-workspace-folders.state.v1";
 const FOLDER_DRAG_TYPE = "application/x-dsh-workspace-folder";
 
 /**
- * アイコンの候補
- */
-const ICON_PRESETS = [
-	"📁",
-	"🗂️",
-	"💼",
-	"🏠",
-	"🧪",
-	"🛠️",
-	"⚙️",
-	"🎮",
-	"📚",
-	"📝",
-	"🌐",
-	"☁️",
-	"🔒",
-	"🤖",
-	"🐋",
-	"🚀",
-	"⭐",
-	"🔥",
-	"🎨",
-	"🎵",
-	"📦",
-	"🧩",
-	"💡",
-	"🔬",
-];
-
-/**
  * 見出し行と 純正の一覧へ足すボタンの見た目
  *
  * 純正の CSS Modules は外から読めないため 0.2.1 の純正のワークスペース行と
@@ -162,9 +134,26 @@ const STYLE = `
 :has(input[tabindex="0"]) > .dwf-headerButton{display:none}
 [role="tree"]:has(> .dwf-row[class*="dwf-drop-"]) > :not(.dwf-row)::before,[role="tree"]:has(> .dwf-row[class*="dwf-drop-"]) > :not(.dwf-row)::after{display:none !important}
 :has(> [role="tree"] > .dwf-row[class*="dwf-drop-"]) > span[aria-hidden="true"]{display:none !important}
-.dwf-iconGrid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:12px}
-.dwf-iconChoice{height:32px;border-radius:var(--dsw-radius-sm);border:none;background:0 0;cursor:pointer;font-size:18px;line-height:1}
-.dwf-iconChoice:hover,.dwf-iconChoice[aria-pressed=true]{background:var(--dsw-alias-interactive-bg-hover)}
+.dwf-pickerModal{width:min(440px,100%);padding-bottom:0}
+.dwf-picker{display:flex;flex-direction:column;gap:8px;margin:0 -24px}
+.dwf-pickerSearch{margin:0 16px}
+.dwf-pickerMain{display:flex;height:320px;border-top:.5px solid var(--dsw-alias-border-l2)}
+.dwf-pickerRail{flex:none;display:flex;flex-direction:column;gap:2px;padding:6px;overflow-y:auto;background:var(--dsw-alias-bg-layer-1);border-right:.5px solid var(--dsw-alias-border-l2)}
+.dwf-pickerRailButton{width:32px;height:32px;flex:none;border:none;border-radius:var(--dsw-radius-sm);background:0 0;cursor:pointer;color:var(--dsw-alias-label-tertiary);display:inline-flex;align-items:center;justify-content:center;filter:grayscale(1);opacity:.7}
+.dwf-pickerRailButton:hover,.dwf-pickerRailButton[aria-selected=true]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);filter:none;opacity:1}
+.dwf-pickerRailButton .dwf-emoji{font-size:18px}
+.dwf-pickerScroll{flex:1;min-width:0;overflow-y:auto;padding:0 10px 10px;position:relative}
+.dwf-pickerHead{position:sticky;top:0;z-index:1;margin:0;padding:10px 4px 6px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-bg-layer-2)}
+.dwf-pickerGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(36px,1fr));gap:2px}
+.dwf-pickerItem{height:36px;border:none;border-radius:var(--dsw-radius-sm);background:0 0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary);padding:0}
+.dwf-pickerItem .dwf-emoji{font-size:22px}
+.dwf-pickerItem:hover,.dwf-pickerItem:focus-visible{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);outline:none}
+.dwf-pickerItem[aria-pressed=true]{box-shadow:inset 0 0 0 1.5px var(--dsw-alias-state-business-primary)}
+.dwf-pickerEmpty{margin:24px 0;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:13px}
+.dwf-pickerFooter{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
+.dwf-pickerPreview{width:28px;height:28px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-primary)}
+.dwf-pickerPreview .dwf-emoji{font-size:24px}
+.dwf-pickerName{flex:1;min-width:0;font-size:13px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dwf-modalBody{display:flex;flex-direction:column;gap:8px}
 .dwf-modalText{color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;margin:0}
 .dwf-modalAction{min-width:72px}
@@ -444,7 +433,7 @@ function newId(): string {
  * フォルダの先頭のアイコン
  *
  * @param props - フォルダと開閉
- * @returns 絵文字か 純正と同じフォルダのアイコン
+ * @returns 選んだアイコンか 純正と同じフォルダのアイコン
  */
 function FolderIcon({
 	folder,
@@ -454,7 +443,7 @@ function FolderIcon({
 	open: boolean;
 }) {
 	if (folder?.icon !== undefined) {
-		return <span className="dwf-emoji">{folder.icon}</span>;
+		return <IconGlyph value={folder.icon} />;
 	}
 	return open ? <IconFolderOpenRegular /> : <IconFolderCloseRegular />;
 }
@@ -852,83 +841,6 @@ function NameDialog({
 }
 
 /**
- * アイコンを選ぶダイアログ
- *
- * @param props - 見出し 初期値 確定時の処理
- * @returns ダイアログ
- */
-function IconDialog({
-	title,
-	initial,
-	onConfirm,
-	onClose,
-	t,
-}: {
-	title: string;
-	initial: string;
-	onConfirm: (icon: string) => void;
-	onClose: () => void;
-	t: Messages;
-}) {
-	const [draft, setDraft] = useState(initial);
-	return (
-		<Modal
-			open
-			onClose={onClose}
-			title={title}
-			closeLabel={t.close}
-			footer={
-				<>
-					<Button
-						variant="outline"
-						className="dwf-modalAction"
-						onClick={() => {
-							onConfirm("");
-						}}
-					>
-						{t.resetIcon}
-					</Button>
-					<Button
-						variant="primary"
-						className="dwf-modalAction"
-						onClick={() => {
-							onConfirm(draft.trim());
-						}}
-					>
-						{t.save}
-					</Button>
-				</>
-			}
-		>
-			<Input
-				data-modal-autofocus
-				value={draft}
-				placeholder={t.iconPlaceholder}
-				maxLength={16}
-				onChange={(event) => {
-					setDraft(event.target.value);
-				}}
-			/>
-			<div className="dwf-iconGrid">
-				{ICON_PRESETS.map((icon) => (
-					<button
-						key={icon}
-						type="button"
-						className="dwf-iconChoice"
-						aria-pressed={draft === icon}
-						onClick={() => {
-							setDraft(icon);
-						}}
-					>
-						{icon}
-					</button>
-				))}
-			</div>
-		</Modal>
-	);
-}
-
-/**
  * 開いているダイアログを描く
  *
  * @param props - ダイアログと閉じる処理
@@ -985,9 +897,9 @@ function DialogView({
 			);
 		case "icon":
 			return (
-				<IconDialog
+				<IconPicker
 					title={t.iconTitle}
-					initial={dialog.folder.icon ?? ""}
+					value={dialog.folder.icon ?? ""}
 					onClose={onClose}
 					t={t}
 					onConfirm={(icon) => {
@@ -1000,9 +912,9 @@ function DialogView({
 			);
 		case "workspaceIcon":
 			return (
-				<IconDialog
+				<IconPicker
 					title={t.workspaceIconTitle(dialog.title)}
-					initial={store.getSnapshot().icons?.[dialog.workspaceId] ?? ""}
+					value={store.getSnapshot().icons?.[dialog.workspaceId] ?? ""}
 					onClose={onClose}
 					t={t}
 					onConfirm={(icon) => {
@@ -1256,7 +1168,24 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 		return () => motion.attach(null);
 	}, [motion, tree]);
 
-	const icons = useMemo(() => iconCss(state.icons), [state.icons]);
+	const glyphs = useRef<HTMLDivElement>(null);
+	const [svgs, setSvgs] = useState<ReadonlyMap<string, string>>(new Map());
+	useLayoutEffect(() => {
+		const map = new Map<string, string>();
+		for (const element of Array.from(
+			glyphs.current?.querySelectorAll<HTMLElement>("[data-icon]") ?? [],
+		)) {
+			const svg = element.querySelector("svg");
+			if (svg !== null) {
+				map.set(element.dataset.icon ?? "", svg.outerHTML);
+			}
+		}
+		setSvgs(map);
+	}, []);
+	const icons = useMemo(
+		() => iconCss(state.icons, (value) => svgs.get(value)),
+		[state.icons, svgs],
+	);
 	useLayoutEffect(() => installStyle(ICON_TAG_ID, icons), [icons]);
 
 	useLayoutEffect(() => {
@@ -1496,6 +1425,13 @@ function WorkspaceFolders({ useWorkspaces }: OverlayProps) {
 			<span ref={iconTemplate} hidden>
 				<IconFolderCloseRegular />
 			</span>
+			<div ref={glyphs} hidden>
+				{DSH_ICONS.map((icon) => (
+					<span key={icon.value} data-icon={icon.value}>
+						<IconGlyph value={icon.value} size={16} />
+					</span>
+				))}
+			</div>
 			<DialogView
 				dialog={dialog}
 				t={t}

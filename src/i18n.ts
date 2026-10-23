@@ -8,6 +8,7 @@
  * 1言語ぶんの文言
  */
 export interface Messages {
+	lang: "ja" | "en";
 	newFolder: string;
 	newSubfolder: string;
 	moveUp: string;
@@ -28,7 +29,13 @@ export interface Messages {
 	deleteTitle: string;
 	deleteBody: (name: string) => string;
 	namePlaceholder: string;
-	iconPlaceholder: string;
+	pickerSearch: string;
+	pickerRecent: string;
+	pickerDsh: string;
+	pickerResults: string;
+	pickerEmpty: string;
+	pickerHint: string;
+	emojiGroups: Record<number, string>;
 	resetIcon: string;
 	cancel: string;
 	create: string;
@@ -42,6 +49,7 @@ export interface Messages {
  * 日本語
  */
 const JA: Messages = {
+	lang: "ja",
 	newFolder: "新しいフォルダ",
 	newSubfolder: "サブフォルダを作成",
 	moveUp: "上へ移動",
@@ -63,7 +71,23 @@ const JA: Messages = {
 	deleteBody: (name) =>
 		`「${name}」を削除します 中のワークスペースとサブフォルダは1つ上の階層へ移ります`,
 	namePlaceholder: "フォルダ名",
-	iconPlaceholder: "絵文字を入力",
+	pickerSearch: "アイコンを検索（名前や絵文字）",
+	pickerRecent: "最近使ったもの",
+	pickerDsh: "DSH",
+	pickerResults: "検索結果",
+	pickerEmpty: "見つかりませんでした",
+	pickerHint: "アイコンを選んでください",
+	emojiGroups: {
+		0: "スマイリーと感情",
+		1: "人と体",
+		3: "動物と自然",
+		4: "飲み物・食べ物",
+		5: "旅行・場所",
+		6: "アクティビティ",
+		7: "物",
+		8: "記号",
+		9: "旗",
+	},
 	resetIcon: "既定に戻す",
 	cancel: "キャンセル",
 	create: "作成",
@@ -77,6 +101,7 @@ const JA: Messages = {
  * 英語
  */
 const EN: Messages = {
+	lang: "en",
 	newFolder: "New folder",
 	newSubfolder: "New subfolder",
 	moveUp: "Move up",
@@ -98,7 +123,23 @@ const EN: Messages = {
 	deleteBody: (name) =>
 		`Delete "${name}"? Its workspaces and subfolders move up one level.`,
 	namePlaceholder: "Folder name",
-	iconPlaceholder: "Type an emoji",
+	pickerSearch: "Search icons by name or emoji",
+	pickerRecent: "Recently used",
+	pickerDsh: "DSH",
+	pickerResults: "Search results",
+	pickerEmpty: "No matches",
+	pickerHint: "Pick an icon",
+	emojiGroups: {
+		0: "Smileys & Emotion",
+		1: "People & Body",
+		3: "Animals & Nature",
+		4: "Food & Drink",
+		5: "Travel & Places",
+		6: "Activities",
+		7: "Objects",
+		8: "Symbols",
+		9: "Flags",
+	},
 	resetIcon: "Reset",
 	cancel: "Cancel",
 	create: "Create",
