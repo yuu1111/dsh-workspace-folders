@@ -49,6 +49,13 @@ function sectionSelector(workspaceId: string): string {
 }
 
 /**
+ * 純正行の開閉ボタン分の補正まで階層ごとに重ねると、深い階層ほど余白が広がるため分離する。
+ */
+export function headingIndent(depth: number): number {
+	return depth * INDENT_PX;
+}
+
+/**
  * 字下げの段ごとに縦の案内線を引く背景
  *
  * 各段の線は 親の見出し行の三角の真下 先頭から 8px と三角の幅の半分の位置に引く
@@ -65,7 +72,7 @@ export function guideBackground(depth: number): string {
 	const positions: string[] = [];
 	for (let level = 0; level < depth; level++) {
 		lines.push(GUIDE_LINE);
-		positions.push(`${GUIDE_OFFSET_PX + level * INDENT_PX}px 0`);
+		positions.push(`${GUIDE_OFFSET_PX + headingIndent(level)}px 0`);
 	}
 	return `background-image:${lines.join(",")};background-size:1px 100%;background-repeat:no-repeat;background-position:${positions.join(",")}`;
 }
@@ -260,7 +267,7 @@ export function layoutCss(layout: FolderLayout): string {
 			? "display:none !important"
 			: [
 					`order:${placement.order}`,
-					`--dsh-workspace-indent:${placement.depth * INDENT_PX}px !important`,
+					`--dsh-workspace-indent:${headingIndent(placement.depth) + (placement.depth > 0 ? 22 : 0)}px !important`,
 					guideBackground(placement.depth),
 				]
 					.filter(Boolean)

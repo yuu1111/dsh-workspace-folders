@@ -62,6 +62,7 @@ import {
 	activityCss,
 	activityStyle,
 	guideBackground,
+	headingIndent,
 	iconCss,
 	layoutCss,
 	quote,
@@ -82,7 +83,6 @@ import {
 	type FolderState,
 	folderPath,
 	type HeadingRow,
-	INDENT_PX,
 	moveFolder,
 	placeFolder,
 	pruneWorkspaces,
@@ -594,7 +594,7 @@ function HeadingRowView({
 			style={
 				{
 					order: row.order,
-					"--dwf-indent": `${row.depth * INDENT_PX}px`,
+					"--dwf-indent": `${headingIndent(row.depth)}px`,
 					...guideStyle(row.depth),
 				} as CSSProperties
 			}

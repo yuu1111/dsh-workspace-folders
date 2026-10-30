@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	activityCss,
 	guideBackground,
+	headingIndent,
 	iconCss,
 	layoutCss,
 	quote,
@@ -32,6 +33,17 @@ describe("layoutCss", () => {
 			"f",
 		);
 		const css = layoutCss(computeLayout(state, ["a", "b"]));
+		expect(headingIndent(0)).toBe(0);
+		expect(headingIndent(1) + 22).toBe(36);
+		expect(headingIndent(2) + 22).toBe(50);
+		const nested = assignWorkspace(
+			createFolder(state, "child", "Child", "f"),
+			"c",
+			"child",
+		);
+		expect(layoutCss(computeLayout(nested, ["a", "c"]))).toContain(
+			"--dsh-workspace-indent:50px !important",
+		);
 		expect(css).toContain(
 			'[data-slot="sidebar.workspaces"] [role="tree"] > :has(> [data-row-key="workspace:a"])',
 		);
@@ -55,7 +67,7 @@ describe("layoutCss", () => {
 	test("段ごとに親の三角の真下へ案内線を引く", () => {
 		expect(guideBackground(0)).toBe("");
 		const two = guideBackground(2);
-		expect(two).toContain("background-position:15px 0,51px 0");
+		expect(two).toContain("background-position:15px 0,29px 0");
 		expect(two.match(/linear-gradient/g)).toHaveLength(2);
 	});
 

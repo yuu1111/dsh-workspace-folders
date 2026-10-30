@@ -104,13 +104,7 @@ export const EMPTY_STATE: FolderState = {
  */
 export const UNASSIGNED_ID = "";
 
-/**
- * 1段の字下げ
- *
- * 親には三角とアイコン 子Projectにはアイコンだけがあるため
- * 22pxではアイコン位置が揃ってしまう さらに14px右へ寄せて親子を区別する
- */
-export const INDENT_PX = 36;
+export const INDENT_PX = 14;
 
 /**
  * 値が plain なオブジェクトか
