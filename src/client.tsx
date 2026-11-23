@@ -95,6 +95,7 @@ import {
 	UNASSIGNED_ID,
 } from "./model";
 import { createRowMotion } from "./motion";
+import { standaloneSvg } from "./sprite";
 import { createFolderStore, type HostForm } from "./store";
 
 /**
@@ -1312,8 +1313,9 @@ function WorkspaceFolders({
 			glyphs.current?.querySelectorAll<HTMLElement>("[data-icon]") ?? [],
 		)) {
 			const svg = element.querySelector("svg");
-			if (svg !== null) {
-				map.set(element.dataset.icon ?? "", svg.outerHTML);
+			const markup = svg === null ? undefined : standaloneSvg(svg);
+			if (markup !== undefined) {
+				map.set(element.dataset.icon ?? "", markup);
 			}
 		}
 		setSvgs(map);
